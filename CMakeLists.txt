@@ -21,6 +21,10 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libstdc++")
 # Create executable
 add_executable(VulkanEngine ${SOURCES})
 
+set(VULKAN_SDK_PATH "C:/VulkanSDK/1.3.283.0")
+set(VK_LAYER_PATH "C:/VulkanSDK/1.3.283.0/Bin/VkLayer_khronos_validation.json")
+set(VK_INSTANCE_LAYERS "VK_LAYER_KHRONOS_validation")
+
 # Find Vulkan package
 find_package(Vulkan REQUIRED)
 if (Vulkan_FOUND)

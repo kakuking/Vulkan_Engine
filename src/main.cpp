@@ -1,13 +1,21 @@
 #include "types.h"
 
-#include "renderer.cpp"
+#include "renderer.h"
 
 int main(){
     Renderer app;
 
     app.init();
 
-    app.run();
+    try {
+        app.run();
+    } catch (const std::exception &e) {
+        std::cerr << e.what() << std::endl;
+        return EXIT_FAILURE;
+    }
 
     app.cleanup();
+
+    return EXIT_SUCCESS;
+
 }
