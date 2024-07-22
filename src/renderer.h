@@ -6,6 +6,10 @@
 #include "utility.h"
 #include "initializers.h"
 
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_vulkan.h"
+
 class Renderer{
 public:
     GLFWwindow* _window;
@@ -45,6 +49,10 @@ public:
     std::vector<ComputeEffect> _backgroundEffects;
     int _currentBackground{0};
 
+    VkFence _immediateFence;
+    VkCommandBuffer _immediateCommandBuffer;
+    VkCommandPool _immediateCommandPool;
+    
     bool frameBufferResized;
 
     void init(){
@@ -55,6 +63,7 @@ public:
         setupSyncStructures();
         setupDescriptors();
         setupPipeline();
+        setupImgui();
     }
 
     void run(){
@@ -63,14 +72,17 @@ public:
         auto startTime = std::chrono::high_resolution_clock::now();
 
         while(!glfwWindowShouldClose(_window)){
+            auto frameStartTime = std::chrono::high_resolution_clock::now();
+            glfwPollEvents();
             if(frameBufferResized) {
                 frameBufferResized = false;
                 recreateSwapChain();
             }
 
-            auto frameStartTime = std::chrono::high_resolution_clock::now();
-
-            glfwPollEvents();
+            ImGui_ImplGlfw_NewFrame();
+            ImGui_ImplVulkan_NewFrame();
+            ImGui::NewFrame();
+            renderImgui();
 
             draw();
 
@@ -153,7 +165,12 @@ private:
         Utility::transitionImage(command, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
         Utility::copyImageToImage(command, _drawImage.image, _swapchainImages[swapchainImageIndex], _drawExtent, _swapchainExtent);
-        Utility::transitionImage(command, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+
+        Utility::transitionImage(command, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+        drawImgui(command, _swapchainImageViews[swapchainImageIndex]);
+
+        Utility::transitionImage(command, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
         VK_CHECK(vkEndCommandBuffer(command));
 
@@ -181,6 +198,17 @@ private:
         }
 
         _frameNumber++;
+    }
+
+    void drawImgui(VkCommandBuffer command, VkImageView targetImageView){
+        VkRenderingAttachmentInfo colorAttachment = Initializers::attachmentInfo(targetImageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        VkRenderingInfo renderInfo = Initializers::renderingInfo(_swapchainExtent, &colorAttachment, nullptr);
+
+        vkCmdBeginRendering(command, &renderInfo);
+
+        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command);
+
+        vkCmdEndRendering(command);
     }
 
     void drawBackground(VkCommandBuffer command){
@@ -271,6 +299,27 @@ private:
         });
     }
 
+    void renderImgui(){
+        if(ImGui::Begin("Background")) {
+            ComputeEffect& selected = _backgroundEffects[_currentBackground];
+
+            ImGui::Text("Selected Effect: ", selected.name);
+
+            ImGui::SliderInt("Effect Index: ", &_currentBackground, 0, _backgroundEffects.size() - 1);
+
+            ImGui::InputFloat4("Color 1", (float*)& selected.data.color1);
+            ImGui::InputFloat4("Color 2", (float*)& selected.data.color2);
+
+            if(strcmp(selected.name, "sky") == 0){
+                ImGui::InputFloat4("Color 3", (float*)& selected.data.color3);
+                ImGui::InputFloat4("Color 4", (float*)& selected.data.color4);
+            }
+        }
+
+        ImGui::End();
+        ImGui::Render();
+    }
+
     void setupDescriptors(){
         std::vector<DescriptorAllocator::PoolSizeRatio> sizeRatios = {
             {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1}
@@ -339,6 +388,76 @@ private:
         }
     }
 
+    void setupImgui(){
+        VkDescriptorPoolSize pool_sizes[] = { { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
+		{ VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 } };
+
+        VkDescriptorPoolCreateInfo pool_info = {};
+        pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        pool_info.maxSets = 1000;
+        pool_info.poolSizeCount = (uint32_t)std::size(pool_sizes);
+        pool_info.pPoolSizes = pool_sizes;
+
+        VkDescriptorPool imguiPool;
+        VK_CHECK(vkCreateDescriptorPool(_device, &pool_info, nullptr, &imguiPool));
+
+        ImGui::CreateContext();
+        ImGui_ImplGlfw_InitForVulkan(_window, true);
+
+        ImGui_ImplVulkan_InitInfo initInfo{};
+        initInfo.Instance = _instance;
+        initInfo.PhysicalDevice = _physicalDevice;
+        initInfo.Device = _device;
+        initInfo.Queue = _graphicsQueue;
+        initInfo.DescriptorPool = imguiPool;
+        initInfo.MinImageCount = 3;
+        initInfo.ImageCount = 3;
+        initInfo.UseDynamicRendering = true;
+
+        initInfo.PipelineRenderingCreateInfo = {.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
+        initInfo.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
+        initInfo.PipelineRenderingCreateInfo.pColorAttachmentFormats = &_swapchainImageFormat;
+
+        initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+
+        ImGui_ImplVulkan_Init(&initInfo);
+        ImGui_ImplVulkan_CreateFontsTexture();
+
+        _mainDeletionQueue.pushFunction([=](){
+            ImGui_ImplVulkan_Shutdown();
+            vkDestroyDescriptorPool(_device, imguiPool, nullptr);
+        });
+    }
+
+    void immediateSubmit(std::function<void(VkCommandBuffer command)>&& function){
+        VK_CHECK(vkResetFences(_device, 1, &_immediateFence));
+        VK_CHECK(vkResetCommandBuffer(_immediateCommandBuffer, 0));
+
+        VkCommandBuffer command = _immediateCommandBuffer;
+        VkCommandBufferBeginInfo commandBeginInfo = Initializers::commandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+        VK_CHECK(vkBeginCommandBuffer(command, &commandBeginInfo));
+
+        function(command);
+
+        VK_CHECK(vkEndCommandBuffer(command));
+
+        VkCommandBufferSubmitInfo submitInfo = Initializers::commandBufferSubmitInfo(command);
+        VkSubmitInfo2 submit = Initializers::submitInfo(&submitInfo, nullptr, nullptr);
+
+        VK_CHECK(vkQueueSubmit2(_graphicsQueue, 1, &submit, _immediateFence));
+        VK_CHECK(vkWaitForFences(_device, 1, &_immediateFence, true, 9999999999));
+    }
+
     void setupSwapchain(){
         createSwapchain();
     // Create Draw Image
@@ -384,7 +503,7 @@ private:
 
         VK_CHECK(vkCreateImageView(_device, &dviewInfo, nullptr, &_depthImage.imageView));
 
-        _mainDeletionQueue.pushFunction([&](){
+        _swapchainDeletionQueue.pushFunction([&](){
             vkDestroyImageView(_device, _drawImage.imageView, nullptr);
             vmaDestroyImage(_allocator, _drawImage.image, _drawImage.allocation);
 
@@ -421,7 +540,8 @@ private:
         cleanupSwapchain();
         _descriptorDeletionQueue.flush();
 
-        createSwapchain();
+        // createSwapchain();
+        setupSwapchain();
         setupDescriptors();
 
         frameBufferResized = false;
