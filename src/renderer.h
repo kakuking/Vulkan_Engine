@@ -303,9 +303,11 @@ private:
         if(ImGui::Begin("Background")) {
             ComputeEffect& selected = _backgroundEffects[_currentBackground];
 
-            ImGui::Text("Selected Effect: ", selected.name);
+            ImGui::Text("Selected Effect", selected.name);
 
             ImGui::SliderInt("Effect Index: ", &_currentBackground, 0, _backgroundEffects.size() - 1);
+
+            _currentBackground = std::clamp(_currentBackground, 0, (int)(_backgroundEffects.size() - 1));
 
             ImGui::InputFloat4("Color 1", (float*)& selected.data.color1);
             ImGui::InputFloat4("Color 2", (float*)& selected.data.color2);
@@ -433,7 +435,7 @@ private:
         ImGui_ImplVulkan_Init(&initInfo);
         ImGui_ImplVulkan_CreateFontsTexture();
 
-        _mainDeletionQueue.pushFunction([=](){
+        _mainDeletionQueue.pushFunction([this, imguiPool](){
             ImGui_ImplVulkan_Shutdown();
             vkDestroyDescriptorPool(_device, imguiPool, nullptr);
         });
