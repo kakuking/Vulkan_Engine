@@ -3,6 +3,7 @@
 
 #include "bootstrap.h"
 #include "structs.h"
+#include "utility.h"
 #include "initializers.h"
 
 class Renderer{
@@ -18,6 +19,8 @@ public:
 
     VmaAllocator _allocator;
 
+    DescriptorAllocator _globalDescriptorAllocator;
+
     VkQueue _graphicsQueue;
     uint32_t _graphicsQueueFamily;
 
@@ -30,10 +33,19 @@ public:
     std::vector<VkImage> _swapchainImages;
     std::vector<VkImageView> _swapchainImageViews;
 
-    bool frameBufferResized;
+    AllocatedImage _drawImage, _depthImage;
+    VkExtent2D _drawExtent;
 
-    AllocatedImage _drawImage;
-    AllocatedImage _depthImage;
+    VkDescriptorSet _drawImageDescriptors;
+    VkDescriptorSetLayout _drawImageDescriptorLayout;
+
+    VkPipeline _backgroundShaderPipeline;
+    VkPipelineLayout _backgroundShaderPipelineLayout;
+
+    std::vector<ComputeEffect> _backgroundEffects;
+    int _currentBackground{0};
+
+    bool frameBufferResized;
 
     void init(){
         setupWindow();
@@ -41,6 +53,8 @@ public:
         setupSwapchain();
         setupCommandResources();
         setupSyncStructures();
+        setupDescriptors();
+        setupPipeline();
     }
 
     void run(){
@@ -49,6 +63,11 @@ public:
         auto startTime = std::chrono::high_resolution_clock::now();
 
         while(!glfwWindowShouldClose(_window)){
+            if(frameBufferResized) {
+                frameBufferResized = false;
+                recreateSwapChain();
+            }
+
             auto frameStartTime = std::chrono::high_resolution_clock::now();
 
             glfwPollEvents();
@@ -87,6 +106,7 @@ public:
 
         cleanupSwapchain();
         _mainDeletionQueue.flush();
+        _descriptorDeletionQueue.flush();
         
 
         vkDestroySurfaceKHR(_instance, _surface, nullptr);
@@ -100,12 +120,196 @@ public:
 private:
     DeletionQueue _mainDeletionQueue;
     DeletionQueue _swapchainDeletionQueue;
+    DeletionQueue _descriptorDeletionQueue;
 
     void draw(){
-        if(frameBufferResized) {
-            frameBufferResized = false;
-            recreateSwapChain();
+        VK_CHECK(vkWaitForFences(_device, 1, &getCurrentFrame().renderFence, VK_TRUE, 1000000000));
+
+        getCurrentFrame().deletionQueue.flush();
+
+        VK_CHECK(vkResetFences(_device, 1, &getCurrentFrame().renderFence));
+
+        uint32_t swapchainImageIndex;
+        if(vkAcquireNextImageKHR(_device, _swapchain, 1000000000, getCurrentFrame().swapchainSemaphore, nullptr, &swapchainImageIndex) == VK_ERROR_OUT_OF_DATE_KHR){
+            frameBufferResized = true;
+            return;
         }
+
+        VkCommandBuffer command = getCurrentFrame().mainCommandBuffer;
+
+        VK_CHECK(vkResetCommandBuffer(command, 0));
+
+        _drawExtent.width = _drawImage.imageExtent.width;
+        _drawExtent.height = _drawImage.imageExtent.height;
+
+        VkCommandBufferBeginInfo beginInfo = Initializers::commandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+        VK_CHECK(vkBeginCommandBuffer(command, &beginInfo));
+
+        Utility::transitionImage(command, _drawImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+
+        drawBackground(command);
+
+        Utility::transitionImage(command, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        Utility::transitionImage(command, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+        Utility::copyImageToImage(command, _drawImage.image, _swapchainImages[swapchainImageIndex], _drawExtent, _swapchainExtent);
+        Utility::transitionImage(command, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+
+        VK_CHECK(vkEndCommandBuffer(command));
+
+        VkCommandBufferSubmitInfo commandInfo = Initializers::commandBufferSubmitInfo(command);
+
+        VkSemaphoreSubmitInfo waitInfo = Initializers::semaphoreSubmitInfo(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, getCurrentFrame().swapchainSemaphore);
+        VkSemaphoreSubmitInfo signalInfo = Initializers::semaphoreSubmitInfo(VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT, getCurrentFrame().renderSemaphore);
+
+        VkSubmitInfo2 submitInfo = Initializers::submitInfo(&commandInfo, &signalInfo, &waitInfo);
+
+        VK_CHECK(vkQueueSubmit2(_graphicsQueue, 1, &submitInfo, getCurrentFrame().renderFence));
+
+        VkPresentInfoKHR presentInfo{};
+        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        presentInfo.pNext = nullptr;
+        presentInfo.pSwapchains = &_swapchain;
+        presentInfo.swapchainCount = 1;
+
+        presentInfo.waitSemaphoreCount = 1;
+        presentInfo.pWaitSemaphores = &getCurrentFrame().renderSemaphore;
+
+        presentInfo.pImageIndices = &swapchainImageIndex;
+        if(vkQueuePresentKHR(_graphicsQueue, &presentInfo) == VK_ERROR_OUT_OF_DATE_KHR){
+            frameBufferResized = true;
+        }
+
+        _frameNumber++;
+    }
+
+    void drawBackground(VkCommandBuffer command){
+        ComputeEffect& effect = _backgroundEffects[_currentBackground];
+
+        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, effect.pipeline);
+        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, _backgroundShaderPipelineLayout, 0, 1, &_drawImageDescriptors, 0, nullptr);
+
+        vkCmdPushConstants(command, _backgroundShaderPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputeShaderPushConstants), &effect.data);
+        vkCmdDispatch(command, std::ceil(_drawExtent.width/16.0), std::ceil(_drawExtent.height/16.0), 1);
+    }
+
+    void setupPipeline(){
+        setupBackgroundPipeline();
+    }
+
+    void setupBackgroundPipeline(){
+        VkPipelineLayoutCreateInfo computeLayout{};
+        computeLayout.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        computeLayout.pNext = nullptr;
+        computeLayout.setLayoutCount = 1;
+        computeLayout.pSetLayouts = &_drawImageDescriptorLayout;
+
+        VkPushConstantRange pushConstant{};
+        pushConstant.offset = 0;
+        pushConstant.size = sizeof(ComputeShaderPushConstants);
+        pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+        computeLayout.pushConstantRangeCount = 1;
+        computeLayout.pPushConstantRanges = &pushConstant;
+
+        VK_CHECK(vkCreatePipelineLayout(_device, &computeLayout, nullptr, &_backgroundShaderPipelineLayout));
+        
+        VkShaderModule gradientShader;
+        if(!Utility::loadShaderModule("shaders\\gradient.comp.spv", _device, &gradientShader)){
+            throw std::runtime_error("Failed to load gradient Shader!");
+        }
+
+        VkShaderModule skyShader;
+        if(!Utility::loadShaderModule("shaders\\sky.comp.spv", _device, &skyShader)){
+            fmt::print("Failed to load sky Shader!");
+        }
+
+        VkPipelineShaderStageCreateInfo stageInfo{};
+        stageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        stageInfo.pNext = nullptr;
+
+        stageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+        stageInfo.module = gradientShader;
+        stageInfo.pName = "main";
+
+        VkComputePipelineCreateInfo computePipelineCreateInfo{};
+        computePipelineCreateInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        computePipelineCreateInfo.pNext = nullptr;
+        computePipelineCreateInfo.layout = _backgroundShaderPipelineLayout;
+        computePipelineCreateInfo.stage = stageInfo;
+
+        ComputeEffect gradient;
+        gradient.layout = _backgroundShaderPipelineLayout;
+        gradient.name = "gradient";
+        gradient.data = {};
+        gradient.data.color1 = glm::vec4(1, 1, 0, 1);
+        gradient.data.color2 = glm::vec4(0, 0, 1, 1);
+
+        VK_CHECK(vkCreateComputePipelines(_device,VK_NULL_HANDLE,1,&computePipelineCreateInfo, nullptr, &gradient.pipeline));
+
+        computePipelineCreateInfo.stage.module = skyShader;
+
+        ComputeEffect sky;
+        sky.layout = _backgroundShaderPipelineLayout;
+        sky.name = "sky";
+        sky.data = {};
+        sky.data.color1 = glm::vec4(0.1, 0.2, 0.4 ,0.97);
+
+        VK_CHECK(vkCreateComputePipelines(_device,VK_NULL_HANDLE,1,&computePipelineCreateInfo, nullptr, &sky.pipeline));
+
+        _backgroundEffects.push_back(gradient);
+        _backgroundEffects.push_back(sky);
+
+        vkDestroyShaderModule(_device, gradientShader, nullptr);
+        vkDestroyShaderModule(_device, skyShader, nullptr);
+        _mainDeletionQueue.pushFunction([&]() {
+            vkDestroyPipelineLayout(_device, _backgroundShaderPipelineLayout, nullptr);
+            for (size_t i = 0; i < _backgroundEffects.size(); i++)
+            {
+                vkDestroyPipeline(_device, _backgroundEffects[i].pipeline, nullptr);
+            }            
+        });
+    }
+
+    void setupDescriptors(){
+        std::vector<DescriptorAllocator::PoolSizeRatio> sizeRatios = {
+            {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1}
+        } ;
+
+        _globalDescriptorAllocator.setupPool(_device, 10, sizeRatios);
+
+        {
+            DescriptorLayoutBuilder builder;
+            builder.addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+            _drawImageDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_COMPUTE_BIT);
+        }
+
+        _drawImageDescriptors = _globalDescriptorAllocator.allocate(_device, _drawImageDescriptorLayout);
+
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        imageInfo.imageView = _drawImage.imageView;
+
+        VkWriteDescriptorSet drawImageInfo{};
+        drawImageInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        drawImageInfo.pNext = nullptr;
+        
+        drawImageInfo.dstBinding = 0;
+        drawImageInfo.dstSet = _drawImageDescriptors;
+        drawImageInfo.descriptorCount = 1;
+        drawImageInfo.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        drawImageInfo.pImageInfo = &imageInfo;
+
+        vkUpdateDescriptorSets(_device, 1, &drawImageInfo, 0, nullptr);
+
+        _descriptorDeletionQueue.pushFunction([&](){
+            _globalDescriptorAllocator.destroyPool(_device);
+            vkDestroyDescriptorSetLayout(_device, _drawImageDescriptorLayout, nullptr);
+        });
+    }
+
+    FrameData& getCurrentFrame() {
+        return _frames[_frameNumber % FRAME_OVERLAP];
     }
 
     void setupCommandResources(){
@@ -118,10 +322,6 @@ private:
             VkCommandBufferAllocateInfo allocInfo = Initializers::commandBufferAllocateInfo(_frames[i].commandPool, 1);
 
             VK_CHECK(vkAllocateCommandBuffers(_device, &allocInfo, &_frames[i].mainCommandBuffer));
-
-            // _mainDeletionQueue.pushFunction([&](){
-            //     vkDestroyCommandPool(_device, _frames[i].commandPool, nullptr);
-            // });
         }
     }
 
@@ -136,13 +336,6 @@ private:
 
             VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_frames[i].swapchainSemaphore));
             VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_frames[i].renderSemaphore));
-
-            // _mainDeletionQueue.pushFunction([&](){
-            //     vkDestroyFence(_device, _frames[i].renderFence, nullptr);
-
-            //     vkDestroySemaphore(_device, _frames[i].swapchainSemaphore, nullptr);
-            //     vkDestroySemaphore(_device, _frames[i].renderSemaphore, nullptr);
-            // });
         }
     }
 
@@ -191,7 +384,7 @@ private:
 
         VK_CHECK(vkCreateImageView(_device, &dviewInfo, nullptr, &_depthImage.imageView));
 
-        _swapchainDeletionQueue.pushFunction([&](){
+        _mainDeletionQueue.pushFunction([&](){
             vkDestroyImageView(_device, _drawImage.imageView, nullptr);
             vmaDestroyImage(_allocator, _drawImage.image, _drawImage.allocation);
 
@@ -226,11 +419,12 @@ private:
         vkDeviceWaitIdle(_device);
 
         cleanupSwapchain();
+        _descriptorDeletionQueue.flush();
 
-        // createSwapChain(_physicalDevice, surface, device, window);
-        setupSwapchain();
-        // depthBuffer.setupDepthResources(device, physicalDevice, swapChainExtent);
-        // createFrameBuffer(device, depthBuffer.depthImageView, renderPass);
+        createSwapchain();
+        setupDescriptors();
+
+        frameBufferResized = false;
     }
 
     void cleanupSwapchain(){

@@ -55,6 +55,110 @@ struct AllocatedImage {
     VkFormat imageFormat;
 };
 
+struct ComputeShaderPushConstants{
+    glm::vec4 color1;
+    glm::vec4 color2;
+    glm::vec4 color3;
+    glm::vec4 color4;
+};
+
+struct ComputeEffect{
+    const char* name;
+
+    VkPipeline pipeline;
+    VkPipelineLayout layout;
+
+    ComputeShaderPushConstants data;
+};
+
+struct DescriptorAllocator{
+    struct PoolSizeRatio{
+        VkDescriptorType type;
+        float ratio;
+    };
+
+    VkDescriptorPool pool;
+
+    void setupPool(VkDevice device, uint32_t maxSets, std::span<PoolSizeRatio> ratios){
+        std::vector<VkDescriptorPoolSize> poolSizes;
+        for(PoolSizeRatio ratio: ratios){
+            poolSizes.push_back(VkDescriptorPoolSize{
+                .type = ratio.type,
+                .descriptorCount = static_cast<uint32_t>(ratio.ratio * maxSets)
+            });
+        }
+
+        VkDescriptorPoolCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        createInfo.flags = 0;
+        createInfo.maxSets = maxSets;
+        createInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+        createInfo.pPoolSizes = poolSizes.data();
+
+        vkCreateDescriptorPool(device, &createInfo, nullptr, &pool);
+    }
+
+    void clearDescriptors(VkDevice device){
+        vkResetDescriptorPool(device, pool, 0);
+    }
+
+    void destroyPool(VkDevice device){
+        vkDestroyDescriptorPool(device, pool, nullptr);
+    }
+
+    VkDescriptorSet allocate(VkDevice device, VkDescriptorSetLayout layout){
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.pNext = nullptr;
+
+        allocInfo.descriptorPool = pool;
+        allocInfo.descriptorSetCount = 1;
+        allocInfo.pSetLayouts = &layout;
+
+        VkDescriptorSet ds;
+        VK_CHECK(vkAllocateDescriptorSets(device, &allocInfo, &ds));
+
+        return ds;
+    }
+};
+
+struct DescriptorLayoutBuilder {
+    std::vector<VkDescriptorSetLayoutBinding> bindings;
+
+    void addBinding(uint32_t binding, VkDescriptorType type){
+        VkDescriptorSetLayoutBinding newBind{};
+        newBind.binding = binding;
+        newBind.descriptorCount = 1;
+        newBind.descriptorType = type;
+
+        bindings.push_back(newBind);
+    }
+
+    void clear(){
+        bindings.clear();
+    }
+
+    VkDescriptorSetLayout build(VkDevice device, VkShaderStageFlags shaderStages, void* pNext = nullptr, VkDescriptorSetLayoutCreateFlags flags = 0){
+        for (auto& b: bindings)
+        {
+            b.stageFlags |= shaderStages;
+        }
+
+        VkDescriptorSetLayoutCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        info.pNext = pNext;
+
+        info.pBindings = bindings.data();
+        info.bindingCount = static_cast<uint32_t>(bindings.size());
+        info.flags = flags;
+        
+        VkDescriptorSetLayout set;
+        VK_CHECK(vkCreateDescriptorSetLayout(device, &info, nullptr, &set));
+
+        return set;
+    }
+};
+
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
     std::optional<uint32_t> presentFamily;

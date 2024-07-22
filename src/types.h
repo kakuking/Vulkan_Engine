@@ -20,6 +20,7 @@
 
 #include <deque>
 #include <functional>
+#include <span>
 
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
