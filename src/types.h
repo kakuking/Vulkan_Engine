@@ -36,8 +36,9 @@ const std::vector<const char*> validationLayers = {
 };
 
 const std::vector<const char*> deviceExtensions = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-    VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME
+    // VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME
+    // VK_EXT_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME
 };
 
 #define VK_CHECK(x)                                                     \

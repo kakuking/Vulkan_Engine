@@ -5,6 +5,7 @@
 #include "structs.h"
 #include "utility.h"
 #include "initializers.h"
+#include "pipelineBuilder.h"
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -46,8 +47,13 @@ public:
     VkPipeline _backgroundShaderPipeline;
     VkPipelineLayout _backgroundShaderPipelineLayout;
 
+    VkPipeline _meshPipeline;
+    VkPipelineLayout _meshPipelineLayout;
+
     std::vector<ComputeEffect> _backgroundEffects;
     int _currentBackground{0};
+
+    MeshBuffers _mesh;
 
     VkFence _immediateFence;
     VkCommandBuffer _immediateCommandBuffer;
@@ -63,6 +69,7 @@ public:
         setupSyncStructures();
         setupDescriptors();
         setupPipeline();
+        setupDefaultRectangleData();
         setupImgui();
     }
 
@@ -118,6 +125,7 @@ public:
 
         cleanupSwapchain();
         _mainDeletionQueue.flush();
+        _meshPipelineDeletionQueue.flush();
         _descriptorDeletionQueue.flush();
         
 
@@ -133,6 +141,7 @@ private:
     DeletionQueue _mainDeletionQueue;
     DeletionQueue _swapchainDeletionQueue;
     DeletionQueue _descriptorDeletionQueue;
+    DeletionQueue _meshPipelineDeletionQueue;
 
     void draw(){
         VK_CHECK(vkWaitForFences(_device, 1, &getCurrentFrame().renderFence, VK_TRUE, 1000000000));
@@ -161,7 +170,13 @@ private:
 
         drawBackground(command);
 
-        Utility::transitionImage(command, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        Utility::transitionImage(command, _drawImage.image,VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        Utility::transitionImage(command, _depthImage.image,VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+
+        drawGeometry(command);
+
+
+        Utility::transitionImage(command, _drawImage.image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
         Utility::transitionImage(command, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
         Utility::copyImageToImage(command, _drawImage.image, _swapchainImages[swapchainImageIndex], _drawExtent, _swapchainExtent);
@@ -200,6 +215,49 @@ private:
         _frameNumber++;
     }
 
+    void drawGeometry(VkCommandBuffer command){
+        VkRenderingAttachmentInfo colorAttachment = Initializers::attachmentInfo(_drawImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        VkRenderingAttachmentInfo depthAttachment = Initializers::attachmentInfo(_depthImage.imageView, nullptr, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+
+        VkRenderingInfo renderInfo = Initializers::renderingInfo(_drawExtent, &colorAttachment, &depthAttachment);
+
+        vkCmdBeginRendering(command, &renderInfo);
+
+        VkViewport viewport{};
+        viewport.x = 0;
+        viewport.y = 0;
+        viewport.width = _drawExtent.width;
+        viewport.height = _drawExtent.height;
+        viewport.minDepth = 0.f;
+        viewport.maxDepth = 1.f;
+
+        VkRect2D scissor{};
+        scissor.offset.x = 0;
+        scissor.offset.y = 0;
+        scissor.extent.width = _drawExtent.width;
+        scissor.extent.height = _drawExtent.height;
+
+        vkCmdSetViewport(command, 0, 1, &viewport);
+        vkCmdSetScissor(command, 0, 1, &scissor);
+
+        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipeline);
+
+        glm::mat4 viewMat = glm::lookAt(glm::vec3(0.0, 0.0, 2.0), glm::vec3(0.0, 0.0, 0.0), glm::vec3(0.0, 1.0, 0.0));
+        glm::mat4 projMat = glm::ortho(-5.0, 5.0, -5.0, 5.0, 0.1, 100.0);
+        projMat[1][1] *= -1;
+
+        MeshPushConstants pushConstants;
+        pushConstants.worldMatrix = glm::mat4(1.0f);
+        pushConstants.vertexBuffer = _mesh.vertexBufferAddress;
+        
+        vkCmdPushConstants(command, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &pushConstants);
+        vkCmdBindIndexBuffer(command, _mesh.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+        vkCmdDrawIndexed(command, _mesh.indexCount, 1, 0, 0, 0);
+
+        vkCmdEndRendering(command);
+    }
+
     void drawImgui(VkCommandBuffer command, VkImageView targetImageView){
         VkRenderingAttachmentInfo colorAttachment = Initializers::attachmentInfo(targetImageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
         VkRenderingInfo renderInfo = Initializers::renderingInfo(_swapchainExtent, &colorAttachment, nullptr);
@@ -223,6 +281,53 @@ private:
 
     void setupPipeline(){
         setupBackgroundPipeline();
+        setupMeshPipeline();
+    }
+
+    void setupMeshPipeline(){
+        VkShaderModule vertexShader;
+        if(!Utility::loadShaderModule("shaders\\shader.vert.spv", _device, &vertexShader)){
+            fmt::println("Failed to load vertex shader");
+        }
+
+        VkShaderModule fragShader;
+        if(!Utility::loadShaderModule("shaders\\shader.frag.spv", _device, &fragShader)){
+            fmt::println("Failed to load frag shader");
+        }
+
+        VkPushConstantRange bufferRange{};
+        bufferRange.offset = 0;
+        bufferRange.size = sizeof(MeshPushConstants);
+        bufferRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+        VkPipelineLayoutCreateInfo layoutInfo = Initializers::pipelineLayoutCreateInfo();
+        layoutInfo.pushConstantRangeCount = 1;
+        layoutInfo.pPushConstantRanges = &bufferRange;
+
+        VK_CHECK(vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_meshPipelineLayout));
+
+        PipelineBuilder pipelineBuilder;
+        pipelineBuilder.pipelineLayout = _meshPipelineLayout;
+        pipelineBuilder.setShaders(vertexShader, fragShader);
+        pipelineBuilder.setInputTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+        pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_FILL);
+        pipelineBuilder.setCullMode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+        pipelineBuilder.setMultisamplingNone();
+        pipelineBuilder.enableBlendingAlphablend();
+        pipelineBuilder.enableDepthtest(true, VK_COMPARE_OP_LESS_OR_EQUAL);
+
+        pipelineBuilder.setColorAttachmentFormat(_drawImage.imageFormat);
+        pipelineBuilder.setDepthFormat(_depthImage.imageFormat);
+
+        _meshPipeline = pipelineBuilder.buildPipeline(_device);
+
+        vkDestroyShaderModule(_device, vertexShader, nullptr);
+        vkDestroyShaderModule(_device, fragShader, nullptr);
+
+        _meshPipelineDeletionQueue.pushFunction([&](){
+            vkDestroyPipelineLayout(_device, _meshPipelineLayout, nullptr);
+            vkDestroyPipeline(_device, _meshPipeline, nullptr);
+        });
     }
 
     void setupBackgroundPipeline(){
@@ -309,12 +414,26 @@ private:
 
             _currentBackground = std::clamp(_currentBackground, 0, (int)(_backgroundEffects.size() - 1));
 
-            ImGui::InputFloat4("Color 1", (float*)& selected.data.color1);
-            ImGui::InputFloat4("Color 2", (float*)& selected.data.color2);
+            // Temp colors so that we can easily set RGB values in range of 255
+            glm::vec4 tempColor1 = selected.data.color1 * 255.f;
+            glm::vec4 tempColor2 = selected.data.color2 * 255.f;
+            
+            ImGui::InputFloat4("Color 1", (float*)& tempColor1);
+            ImGui::InputFloat4("Color 2", (float*)& tempColor2);
+
+            selected.data.color1 = tempColor1 / 255.f;
+            selected.data.color2 = tempColor2 / 255.f;
 
             if(strcmp(selected.name, "sky") == 0){
-                ImGui::InputFloat4("Color 3", (float*)& selected.data.color3);
-                ImGui::InputFloat4("Color 4", (float*)& selected.data.color4);
+                // Temp colors so that we can easily set RGB values in range of 255
+                glm::vec4 tempColor3 = selected.data.color3 * 255.f;
+                glm::vec4 tempColor4 = selected.data.color4 * 255.f;
+
+                ImGui::InputFloat4("Color 3", (float*)& tempColor3);
+                ImGui::InputFloat4("Color 4", (float*)& tempColor4);
+
+                selected.data.color3 = tempColor3 / 255.f;
+                selected.data.color4 = tempColor4 / 255.f;
             }
         }
 
@@ -374,6 +493,60 @@ private:
 
             VK_CHECK(vkAllocateCommandBuffers(_device, &allocInfo, &_frames[i].mainCommandBuffer));
         }
+
+        VK_CHECK(vkCreateCommandPool(_device, &createInfo, nullptr, &_immediateCommandPool));
+
+        VkCommandBufferAllocateInfo allocInfo = Initializers::commandBufferAllocateInfo(_immediateCommandPool, 1);
+
+        VK_CHECK(vkAllocateCommandBuffers(_device, &allocInfo, &_immediateCommandBuffer));
+
+        _mainDeletionQueue.pushFunction([&](){
+            vkDestroyCommandPool(_device, _immediateCommandPool, nullptr);
+        });
+    }
+
+    MeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices){
+        const size_t vertexBufferSize = vertices.size() * sizeof(Vertex);
+        const size_t indexBufferSize = indices.size() * sizeof(uint32_t);
+
+        MeshBuffers newSurface;
+        newSurface.indexCount = static_cast<uint32_t>(indices.size());
+
+        newSurface.vertexBuffer = Utility::createBuffer(_allocator, vertexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+
+        VkBufferDeviceAddressInfo deviceAddressInfo{};
+        deviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+        deviceAddressInfo.buffer = newSurface.vertexBuffer.buffer;
+
+        newSurface.vertexBufferAddress = vkGetBufferDeviceAddress(_device, &deviceAddressInfo);
+
+        newSurface.indexBuffer = Utility::createBuffer(_allocator, indexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+
+        AllocatedBuffer stagingBuffer = Utility::createBuffer(_allocator, vertexBufferSize + indexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
+
+        void* data = stagingBuffer.allocation->GetMappedData();
+
+        memcpy(data, vertices.data(), vertexBufferSize);
+        memcpy((char*)data + vertexBufferSize, indices.data(), indexBufferSize);
+
+        immediateSubmit([&](VkCommandBuffer command){
+            VkBufferCopy vertexCopy{0};
+            vertexCopy.dstOffset = 0;
+            vertexCopy.srcOffset = 0;
+            vertexCopy.size = vertexBufferSize;
+
+            VkBufferCopy indexCopy{0};
+            indexCopy.dstOffset = 0;
+            indexCopy.srcOffset = vertexBufferSize;
+            indexCopy.size = indexBufferSize;
+
+            vkCmdCopyBuffer(command, stagingBuffer.buffer, newSurface.vertexBuffer.buffer, 1, &vertexCopy);
+            vkCmdCopyBuffer(command, stagingBuffer.buffer, newSurface.indexBuffer.buffer, 1, &indexCopy);
+        });
+
+        destroyBuffer(stagingBuffer);
+
+        return newSurface;
     }
 
     void setupSyncStructures(){
@@ -388,6 +561,12 @@ private:
             VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_frames[i].swapchainSemaphore));
             VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_frames[i].renderSemaphore));
         }
+
+        VK_CHECK(vkCreateFence(_device, &fenceCreateInfo, nullptr, &_immediateFence));
+
+        _mainDeletionQueue.pushFunction([&](){
+            vkDestroyFence(_device, _immediateFence, nullptr);
+        });
     }
 
     void setupImgui(){
@@ -512,7 +691,6 @@ private:
             vkDestroyImageView(_device, _depthImage.imageView, nullptr);
             vmaDestroyImage(_allocator, _depthImage.image, _depthImage.allocation);
         });
-
     }
 
     void createSwapchain(){
@@ -541,9 +719,11 @@ private:
 
         cleanupSwapchain();
         _descriptorDeletionQueue.flush();
+        _meshPipelineDeletionQueue.flush();
 
         // createSwapchain();
         setupSwapchain();
+        setupMeshPipeline();
         setupDescriptors();
 
         frameBufferResized = false;
@@ -642,6 +822,10 @@ private:
         }
     }
 
+    void destroyBuffer(const AllocatedBuffer& buffer){
+        vmaDestroyBuffer(_allocator, buffer.buffer, buffer.allocation);
+    }
+
     void destroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator) {
         auto func = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
 
@@ -653,5 +837,55 @@ private:
     void cleanupWindow(){
         glfwDestroyWindow(_window);
         glfwTerminate();
+    }
+
+    void setupDefaultRectangleData(){
+        std::array<Vertex,8> rect_vertices;
+
+        rect_vertices[0].position = {0.5,-0.5, 0};
+        rect_vertices[1].position = {0.5,0.5, 0};
+        rect_vertices[2].position = {-0.5,-0.5, 0};
+        rect_vertices[3].position = {-0.5,0.5, 0};
+
+        rect_vertices[4].position = {1.0,-0.5,0.5};
+        rect_vertices[5].position = {1.0,0.5,0.5};
+        rect_vertices[6].position = {0.0,-0.5,0.5};
+        rect_vertices[7].position = {0.0,0.5,0.5};
+
+        rect_vertices[0].color = {0,0, 0,1};
+        rect_vertices[1].color = {0.5,0.5,0.5,1};
+        rect_vertices[2].color = {1,0,0,1};
+        rect_vertices[3].color = {0,1,0,1};
+
+        rect_vertices[4].color = {0,0,1,1};
+        rect_vertices[5].color = {0,0,1,1};
+        rect_vertices[6].color = {0,0,1,1};
+        rect_vertices[7].color = {0,0,1,1};
+
+        std::array<uint32_t,12> rect_indices;
+
+        rect_indices[0] = 0;
+        rect_indices[1] = 1;
+        rect_indices[2] = 2;
+
+        rect_indices[3] = 2;
+        rect_indices[4] = 1;
+        rect_indices[5] = 3;
+
+        rect_indices[6] = 4;
+        rect_indices[7] = 5;
+        rect_indices[8] = 6;
+
+        rect_indices[9] = 6;
+        rect_indices[10] = 5;
+        rect_indices[11] = 7;
+
+        _mesh = uploadMesh(rect_indices,rect_vertices);
+
+        //delete the rectangle data on engine shutdown
+        _mainDeletionQueue.pushFunction([&](){
+            destroyBuffer(_mesh.indexBuffer);
+            destroyBuffer(_mesh.vertexBuffer);
+        });
     }
 };

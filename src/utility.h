@@ -2,10 +2,30 @@
 
 #include "types.h"
 #include "initializers.h"
+#include "structs.h"
 #include <fstream>
 
 
 namespace Utility{
+    AllocatedBuffer createBuffer(VmaAllocator allocator, size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage){
+        VkBufferCreateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.pNext = nullptr;
+        bufferInfo.size = allocSize;
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        bufferInfo.usage = usage;
+
+        VmaAllocationCreateInfo vmaAllocInfo{};
+        vmaAllocInfo.usage =  memoryUsage;
+        vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        AllocatedBuffer newBuffer;
+
+        VK_CHECK(vmaCreateBuffer(allocator, &bufferInfo, &vmaAllocInfo, &newBuffer.buffer, &newBuffer.allocation, &newBuffer.info));
+
+        return newBuffer;
+    }
+
     void transitionImage(VkCommandBuffer command, VkImage image, VkImageLayout currentLayout, VkImageLayout newLayout) {
         VkImageMemoryBarrier2 imageBarrier{};
         imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;

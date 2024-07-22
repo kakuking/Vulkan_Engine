@@ -126,6 +126,18 @@ namespace Initializers{
         return info;
     }
 
+    VkPipelineShaderStageCreateInfo pipelineShaderStageCreateInfo(VkShaderStageFlagBits stage,VkShaderModule shaderModule, const char * entry)
+    {
+        VkPipelineShaderStageCreateInfo info {};
+        info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        info.pNext = nullptr;
+
+        info.stage = stage;
+        info.module = shaderModule;
+        info.pName = entry;
+        return info;
+    }
+
     VkRenderingAttachmentInfo attachmentInfo(VkImageView view, VkClearValue* clear, VkImageLayout layout){
         VkRenderingAttachmentInfo colorAttachment{};
         colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -141,6 +153,21 @@ namespace Initializers{
         }
 
         return colorAttachment;
+    }
+
+    VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo()
+    {
+        VkPipelineLayoutCreateInfo info {};
+        info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        info.pNext = nullptr;
+
+        // empty defaults
+        info.flags = 0;
+        info.setLayoutCount = 0;
+        info.pSetLayouts = nullptr;
+        info.pushConstantRangeCount = 0;
+        info.pPushConstantRanges = nullptr;
+        return info;
     }
 
     VkRenderingInfo renderingInfo(VkExtent2D renderExtent, VkRenderingAttachmentInfo* colorAttachment, VkRenderingAttachmentInfo* depthAttachment)

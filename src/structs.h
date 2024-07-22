@@ -62,6 +62,33 @@ struct ComputeShaderPushConstants{
     glm::vec4 color4;
 };
 
+struct MeshPushConstants{
+    glm::mat4 worldMatrix;
+    VkDeviceAddress vertexBuffer;
+};
+
+struct AllocatedBuffer{
+    VkBuffer buffer;
+    VmaAllocation allocation;
+    VmaAllocationInfo info;
+};
+
+struct MeshBuffers{
+    AllocatedBuffer vertexBuffer;
+    AllocatedBuffer indexBuffer;
+    uint32_t indexCount;
+
+    VkDeviceAddress vertexBufferAddress;
+};
+
+struct Vertex {
+    glm::vec3 position;
+    float uv_x;
+    glm::vec3 normal;
+    float uv_y;
+    glm::vec4 color;
+};
+
 struct ComputeEffect{
     const char* name;
 
