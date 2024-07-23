@@ -1,7 +1,7 @@
 #version 450
 #extension GL_EXT_buffer_reference : require
 
-layout (location = 0) out vec3 outColor;
+layout (location = 0) out vec4 outColor;
 layout (location = 1) out vec2 outUV;
 
 struct Vertex {
@@ -24,11 +24,11 @@ layout(push_constant) uniform constants{
 
 void main() 
 {
-	//const array of positions for the triangle
+	//Vertices uploaded and called from teh address in PushConstants
 	Vertex v = PushConstants.vertexBuffer.vertices[gl_VertexIndex];
 
-	//output the position of each vertex
+	//Basically Proj * view * position
 	gl_Position = PushConstants.renderMatrix * vec4(v.position, 1.0f);
-	outColor = v.color.xyz;
+	outColor = v.color.xyzw;
 	outUV = vec2(v.uvX, v.uvY);
 }

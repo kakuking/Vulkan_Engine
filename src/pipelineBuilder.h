@@ -55,12 +55,12 @@ class PipelineBuilder {
             VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
             vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 
-            VkDynamicState state[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+            VkDynamicState state[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE};
 
             VkPipelineDynamicStateCreateInfo dynamicInfo{};
             dynamicInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
             dynamicInfo.pDynamicStates = &state[0];
-            dynamicInfo.dynamicStateCount = 2;
+            dynamicInfo.dynamicStateCount = 3;
 
             VkGraphicsPipelineCreateInfo pipelineInfo{};
             pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -177,9 +177,5 @@ class PipelineBuilder {
             depthStencil.depthCompareOp = op;
             depthStencil.depthBoundsTestEnable = VK_FALSE;
             depthStencil.stencilTestEnable = VK_FALSE;
-            depthStencil.front = {};
-            depthStencil.back = {};
-            depthStencil.minDepthBounds = 0.f;
-            depthStencil.maxDepthBounds = 1.f;
         }
 };

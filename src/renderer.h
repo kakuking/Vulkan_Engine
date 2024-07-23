@@ -53,13 +53,15 @@ public:
     std::vector<ComputeEffect> _backgroundEffects;
     int _currentBackground{0};
 
-    MeshBuffers _mesh;
+    MeshBuffers _meshOpaque, _meshAlpha;
 
     VkFence _immediateFence;
     VkCommandBuffer _immediateCommandBuffer;
     VkCommandPool _immediateCommandPool;
     
     bool frameBufferResized;
+
+    glm::mat4 view, proj;
 
     void init(){
         setupWindow();
@@ -69,8 +71,11 @@ public:
         setupSyncStructures();
         setupDescriptors();
         setupPipeline();
+        setupViewAndProjMatrices();
         setupDefaultRectangleData();
         setupImgui();
+
+        
     }
 
     void run(){
@@ -175,7 +180,6 @@ private:
 
         drawGeometry(command);
 
-
         Utility::transitionImage(command, _drawImage.image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
         Utility::transitionImage(command, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
@@ -217,7 +221,7 @@ private:
 
     void drawGeometry(VkCommandBuffer command){
         VkRenderingAttachmentInfo colorAttachment = Initializers::attachmentInfo(_drawImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-        VkRenderingAttachmentInfo depthAttachment = Initializers::attachmentInfo(_depthImage.imageView, nullptr, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+        VkRenderingAttachmentInfo depthAttachment = Initializers::depthAttachmentInfo(_depthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
         VkRenderingInfo renderInfo = Initializers::renderingInfo(_drawExtent, &colorAttachment, &depthAttachment);
 
@@ -239,21 +243,27 @@ private:
 
         vkCmdSetViewport(command, 0, 1, &viewport);
         vkCmdSetScissor(command, 0, 1, &scissor);
-
         vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipeline);
 
-        glm::mat4 viewMat = glm::lookAt(glm::vec3(0.0, 0.0, 2.0), glm::vec3(0.0, 0.0, 0.0), glm::vec3(0.0, 1.0, 0.0));
-        glm::mat4 projMat = glm::ortho(-5.0, 5.0, -5.0, 5.0, 0.1, 100.0);
-        projMat[1][1] *= -1;
-
-        MeshPushConstants pushConstants;
-        pushConstants.worldMatrix = glm::mat4(1.0f);
-        pushConstants.vertexBuffer = _mesh.vertexBufferAddress;
+        // Opaque Objects draw - 
+        vkCmdSetDepthWriteEnable(command, VK_TRUE);
+        MeshPushConstants pushConstantsOpaque;
+        pushConstantsOpaque.worldMatrix = proj * view;
+        pushConstantsOpaque.vertexBuffer = _meshOpaque.vertexBufferAddress;
         
-        vkCmdPushConstants(command, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &pushConstants);
-        vkCmdBindIndexBuffer(command, _mesh.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdPushConstants(command, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &pushConstantsOpaque);
+        vkCmdBindIndexBuffer(command, _meshOpaque.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(command, _meshOpaque.indexCount, 1, 0, 0, 0);
 
-        vkCmdDrawIndexed(command, _mesh.indexCount, 1, 0, 0, 0);
+        // Alpha Objects draw - 
+        vkCmdSetDepthWriteEnable(command, VK_FALSE);
+        MeshPushConstants pushConstantsAlpha;
+        pushConstantsAlpha.worldMatrix = proj * view;
+        pushConstantsAlpha.vertexBuffer = _meshAlpha.vertexBufferAddress;
+        
+        vkCmdPushConstants(command, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &pushConstantsAlpha);
+        vkCmdBindIndexBuffer(command, _meshAlpha.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(command, _meshAlpha.indexCount, 1, 0, 0, 0);
 
         vkCmdEndRendering(command);
     }
@@ -311,10 +321,11 @@ private:
         pipelineBuilder.setShaders(vertexShader, fragShader);
         pipelineBuilder.setInputTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
         pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_FILL);
-        pipelineBuilder.setCullMode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+        pipelineBuilder.setCullMode(VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE);
         pipelineBuilder.setMultisamplingNone();
         pipelineBuilder.enableBlendingAlphablend();
-        pipelineBuilder.enableDepthtest(true, VK_COMPARE_OP_LESS_OR_EQUAL);
+        pipelineBuilder.enableDepthtest(VK_TRUE, VK_COMPARE_OP_LESS_OR_EQUAL);
+        // pipelineBuilder.disableDepthtest();
 
         pipelineBuilder.setColorAttachmentFormat(_drawImage.imageFormat);
         pipelineBuilder.setDepthFormat(_depthImage.imageFormat);
@@ -685,6 +696,7 @@ private:
         VK_CHECK(vkCreateImageView(_device, &dviewInfo, nullptr, &_depthImage.imageView));
 
         _swapchainDeletionQueue.pushFunction([&](){
+
             vkDestroyImageView(_device, _drawImage.imageView, nullptr);
             vmaDestroyImage(_allocator, _drawImage.image, _drawImage.allocation);
 
@@ -708,6 +720,8 @@ private:
     }
 
     void recreateSwapChain(){
+
+        // Get new Width and Height
         int width = 0, height = 0;
         glfwGetFramebufferSize(_window, &width, &height);
         while(width == 0 || height == 0){
@@ -715,17 +729,23 @@ private:
             glfwWaitEvents();
         }
 
+        // Wait for device to get idlt
         vkDeviceWaitIdle(_device);
 
+        // Cleanup swapchain, mesh pipeline and descriptors for that stuff
         cleanupSwapchain();
         _descriptorDeletionQueue.flush();
         _meshPipelineDeletionQueue.flush();
 
-        // createSwapchain();
+        // Set everything back up again
         setupSwapchain();
         setupMeshPipeline();
         setupDescriptors();
 
+        // Set the new projection matrix
+        proj = glm::perspective(glm::radians(45.f), (float)_swapchainExtent.width / (float)_swapchainExtent.height, .1f, 100.f);
+
+        // Make sure the frameBufferResized flag is set to false
         frameBufferResized = false;
     }
 
@@ -839,53 +859,81 @@ private:
         glfwTerminate();
     }
 
+    void setupViewAndProjMatrices(){
+        view = glm::lookAt(glm::vec3(0.0f, 0.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        proj = glm::perspective(glm::radians(45.f), (float)_swapchainExtent.width / (float)_swapchainExtent.height, .1f, 100.f);
+
+        // To match vulkans coordinate system
+        proj[1][1] *= -1;
+
+        // std::cout << "View: " << glm::to_string(view) << "\nProj: " << glm::to_string(proj) << std::endl;
+    }
+
     void setupDefaultRectangleData(){
-        std::array<Vertex,8> rect_vertices;
+        std::array<Vertex,4> verticesOpaque;
+        std::array<Vertex,4> verticesAlpha;
 
-        rect_vertices[0].position = {0.5,-0.5, 0};
-        rect_vertices[1].position = {0.5,0.5, 0};
-        rect_vertices[2].position = {-0.5,-0.5, 0};
-        rect_vertices[3].position = {-0.5,0.5, 0};
+        // Alpha rectagle, in front
+        float opacity = 0.9f;
+        verticesAlpha[0].position = {0.5,-0.5, 0};
+        verticesAlpha[1].position = {0.5,0.5, 0};
+        verticesAlpha[2].position = {-0.5,-0.5, 0};
+        verticesAlpha[3].position = {-0.5,0.5, 0};
+        verticesAlpha[0].color = {0,0, 0,opacity};
+        verticesAlpha[1].color = {0.5,0.5,0.5,opacity};
+        verticesAlpha[2].color = {1,0,0,opacity};
+        verticesAlpha[3].color = {0,1,0,opacity};
 
-        rect_vertices[4].position = {1.0,-0.5,0.5};
-        rect_vertices[5].position = {1.0,0.5,0.5};
-        rect_vertices[6].position = {0.0,-0.5,0.5};
-        rect_vertices[7].position = {0.0,0.5,0.5};
+        verticesOpaque[0].position = {1.0,-0.5,-0.5};
+        verticesOpaque[1].position = {1.0,0.5,-0.5};
+        verticesOpaque[2].position = {0.0,-0.5,-0.5};
+        verticesOpaque[3].position = {0.0,0.5,-0.5};
+        verticesOpaque[0].color = {0,0,1,1};
+        verticesOpaque[1].color = {0,0,1,1};
+        verticesOpaque[2].color = {0,0,1,1};
+        verticesOpaque[3].color = {0,0,1,1};
 
-        rect_vertices[0].color = {0,0, 0,1};
-        rect_vertices[1].color = {0.5,0.5,0.5,1};
-        rect_vertices[2].color = {1,0,0,1};
-        rect_vertices[3].color = {0,1,0,1};
+        /*
+        for(Vertex v: rect_vertices){
+            glm::vec4 tempPos = glm::vec4(v.position, 1.0f);
+            glm::vec4 viewPos = view * tempPos;
+            glm::vec4 projPos = proj * viewPos;
+            std::cout << "Vertex Position: " << glm::to_string(v.position) << std::endl;
+            std::cout << "Position after View Matrix: " << glm::to_string(viewPos) << std::endl;
+            std::cout << "Position after Projection Matrix: " << glm::to_string(projPos) << std::endl;
+        }
+        */
 
-        rect_vertices[4].color = {0,0,1,1};
-        rect_vertices[5].color = {0,0,1,1};
-        rect_vertices[6].color = {0,0,1,1};
-        rect_vertices[7].color = {0,0,1,1};
+        std::array<uint32_t,6> indicesOpaque;
+        std::array<uint32_t,6> indicesAlpha;
 
-        std::array<uint32_t,12> rect_indices;
+        // Alpha Rectangle
+        indicesAlpha[0] = 0;
+        indicesAlpha[1] = 1;
+        indicesAlpha[2] = 2;
 
-        rect_indices[0] = 0;
-        rect_indices[1] = 1;
-        rect_indices[2] = 2;
+        indicesAlpha[3] = 2;
+        indicesAlpha[4] = 1;
+        indicesAlpha[5] = 3;
 
-        rect_indices[3] = 2;
-        rect_indices[4] = 1;
-        rect_indices[5] = 3;
+        // Opaque Rectangle
+        indicesOpaque[0] = 0;
+        indicesOpaque[1] = 1;
+        indicesOpaque[2] = 2;
 
-        rect_indices[6] = 4;
-        rect_indices[7] = 5;
-        rect_indices[8] = 6;
+        indicesOpaque[3] = 2;
+        indicesOpaque[4] = 1;
+        indicesOpaque[5] = 3;
 
-        rect_indices[9] = 6;
-        rect_indices[10] = 5;
-        rect_indices[11] = 7;
-
-        _mesh = uploadMesh(rect_indices,rect_vertices);
+        _meshOpaque = uploadMesh(indicesOpaque, verticesOpaque);
+        _meshAlpha = uploadMesh(indicesAlpha, verticesAlpha);
 
         //delete the rectangle data on engine shutdown
         _mainDeletionQueue.pushFunction([&](){
-            destroyBuffer(_mesh.indexBuffer);
-            destroyBuffer(_mesh.vertexBuffer);
+            destroyBuffer(_meshOpaque.indexBuffer);
+            destroyBuffer(_meshOpaque.vertexBuffer);
+            destroyBuffer(_meshAlpha.indexBuffer);
+            destroyBuffer(_meshAlpha.vertexBuffer);
         });
     }
 };
