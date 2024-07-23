@@ -61,7 +61,9 @@ public:
     
     bool frameBufferResized;
 
-    glm::mat4 view, proj;
+    glm::mat4 _view, _proj;
+    float _fov{45.f};
+    int _useOrtho{0};
 
     void init(){
         setupWindow();
@@ -74,8 +76,6 @@ public:
         setupViewAndProjMatrices();
         setupDefaultRectangleData();
         setupImgui();
-
-        
     }
 
     void run(){
@@ -248,7 +248,7 @@ private:
         // Opaque Objects draw - 
         vkCmdSetDepthWriteEnable(command, VK_TRUE);
         MeshPushConstants pushConstantsOpaque;
-        pushConstantsOpaque.worldMatrix = proj * view;
+        pushConstantsOpaque.worldMatrix = _proj * _view;
         pushConstantsOpaque.vertexBuffer = _meshOpaque.vertexBufferAddress;
         
         vkCmdPushConstants(command, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &pushConstantsOpaque);
@@ -258,7 +258,7 @@ private:
         // Alpha Objects draw - 
         vkCmdSetDepthWriteEnable(command, VK_FALSE);
         MeshPushConstants pushConstantsAlpha;
-        pushConstantsAlpha.worldMatrix = proj * view;
+        pushConstantsAlpha.worldMatrix = _proj * _view;
         pushConstantsAlpha.vertexBuffer = _meshAlpha.vertexBufferAddress;
         
         vkCmdPushConstants(command, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &pushConstantsAlpha);
@@ -321,7 +321,8 @@ private:
         pipelineBuilder.setShaders(vertexShader, fragShader);
         pipelineBuilder.setInputTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
         pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_FILL);
-        pipelineBuilder.setCullMode(VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE);
+        // pipelineBuilder.setCullMode(VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_CLOCKWISE);
+        pipelineBuilder.setCullMode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
         pipelineBuilder.setMultisamplingNone();
         pipelineBuilder.enableBlendingAlphablend();
         pipelineBuilder.enableDepthtest(VK_TRUE, VK_COMPARE_OP_LESS_OR_EQUAL);
@@ -445,6 +446,50 @@ private:
 
                 selected.data.color3 = tempColor3 / 255.f;
                 selected.data.color4 = tempColor4 / 255.f;
+            }
+        }
+        ImGui::End();
+
+        static int prevUseOrtho = _useOrtho;
+        static glm::vec3 prevEye{0.f, 0.f, 2.f}, prevCenter{0.f, 0.f, 0.f}, prevUp{0.f, 1.f, 0.f};
+        static float prevFOV = _fov;
+
+        if(ImGui::Begin("Camera Setting")) {
+            
+            // Switch between perspective and ortho cameras
+            if(_useOrtho == 0)
+                ImGui::Text("Perspective Camera");
+            else
+                ImGui::Text("Orthographic Camera");
+
+            ImGui::SliderInt("##", &_useOrtho, 0, 1);
+            if (_useOrtho != prevUseOrtho) {
+                prevUseOrtho = _useOrtho;
+                setProjMatrix();
+            }
+
+            // Setting camera eye
+            glm::vec3 newEye = prevEye, newCenter = prevCenter, newUp = prevUp;
+
+            float rangeOfMovement = 20.f;
+            ImGui::SliderFloat3("Eye", (float*)& newEye, -rangeOfMovement, rangeOfMovement);
+            ImGui::SliderFloat3("Center", (float*)& newCenter, -rangeOfMovement, rangeOfMovement);
+            ImGui::SliderFloat3("Up", (float*)& newUp, -rangeOfMovement, rangeOfMovement);
+
+            if (newEye != prevEye || newCenter != prevCenter || newUp != prevUp) {
+                setViewMatrix(newEye, newCenter, newUp);
+                prevEye = newEye;
+                prevCenter = newCenter;
+                prevUp = newUp;
+            }
+
+            if(_useOrtho == 0){
+                ImGui::SliderFloat("FOV", &_fov, 20.f, 180.f);
+
+                if(_fov != prevFOV){
+                    prevFOV = _fov;
+                    setProjMatrix();
+                }
             }
         }
 
@@ -743,7 +788,7 @@ private:
         setupDescriptors();
 
         // Set the new projection matrix
-        proj = glm::perspective(glm::radians(45.f), (float)_swapchainExtent.width / (float)_swapchainExtent.height, .1f, 100.f);
+        setProjMatrix();
 
         // Make sure the frameBufferResized flag is set to false
         frameBufferResized = false;
@@ -860,13 +905,23 @@ private:
     }
 
     void setupViewAndProjMatrices(){
-        view = glm::lookAt(glm::vec3(0.0f, 0.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        proj = glm::perspective(glm::radians(45.f), (float)_swapchainExtent.width / (float)_swapchainExtent.height, .1f, 100.f);
+        _view = glm::lookAt(glm::vec3(0.0f, 0.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        setProjMatrix();
+    }
 
-        // To match vulkans coordinate system
-        proj[1][1] *= -1;
+    void setProjMatrix(){
+        if(_useOrtho == 0){
+            _proj = glm::perspective(glm::radians(_fov), (float)_swapchainExtent.width / (float)_swapchainExtent.height, .1f, 100.f);
+        } else {
+            float aspectRatio = (float)_swapchainExtent.width / (float)_swapchainExtent.height;
+            _proj = glm::ortho(-1.f*aspectRatio, 1.f*aspectRatio, -1.0f, 1.0f, 0.1f, 100.f);
+        }
 
-        // std::cout << "View: " << glm::to_string(view) << "\nProj: " << glm::to_string(proj) << std::endl;
+        _proj[1][1] *= -1;
+    }
+
+    void setViewMatrix(glm::vec3 eye, glm::vec3 center, glm::vec3 up){
+        _view = glm::lookAt(eye, center, up);
     }
 
     void setupDefaultRectangleData(){
@@ -883,15 +938,23 @@ private:
         verticesAlpha[1].color = {0.5,0.5,0.5,opacity};
         verticesAlpha[2].color = {1,0,0,opacity};
         verticesAlpha[3].color = {0,1,0,opacity};
+        verticesAlpha[0].uv_x = 0;
+        verticesAlpha[1].uv_x = 0;
+        verticesAlpha[2].uv_x = 1;
+        verticesAlpha[3].uv_x = 1;
 
-        verticesOpaque[0].position = {1.0,-0.5,-0.5};
-        verticesOpaque[1].position = {1.0,0.5,-0.5};
-        verticesOpaque[2].position = {0.0,-0.5,-0.5};
-        verticesOpaque[3].position = {0.0,0.5,-0.5};
-        verticesOpaque[0].color = {0,0,1,1};
-        verticesOpaque[1].color = {0,0,1,1};
-        verticesOpaque[2].color = {0,0,1,1};
-        verticesOpaque[3].color = {0,0,1,1};
+        verticesOpaque[0].position = {0.7,-0.5,-0.5};
+        verticesOpaque[1].position = {0.7,0.5,-0.5};
+        verticesOpaque[2].position = {-0.3,-0.5,-0.5};
+        verticesOpaque[3].position = {-0.3,0.5,-0.5};
+        verticesOpaque[0].color = {1,0,1,1};
+        verticesOpaque[1].color = {1,0,1,1};
+        verticesOpaque[2].color = {1,0,1,1};
+        verticesOpaque[3].color = {1,0,1,1};
+        verticesOpaque[0].uv_x = 1;
+        verticesOpaque[1].uv_x = 1;
+        verticesOpaque[2].uv_x = 1;
+        verticesOpaque[3].uv_x = 1;
 
         /*
         for(Vertex v: rect_vertices){
