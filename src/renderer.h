@@ -399,7 +399,7 @@ private:
         sky.layout = _backgroundShaderPipelineLayout;
         sky.name = "sky";
         sky.data = {};
-        sky.data.color1 = glm::vec4(0.1, 0.2, 0.4 ,0.97);
+        sky.data.color1 = glm::vec4(0.709f, 0.113f, 0.333f, 0.97f);
         sky.data.viewMatrix = _view;
 
         VK_CHECK(vkCreateComputePipelines(_device,VK_NULL_HANDLE,1,&computePipelineCreateInfo, nullptr, &sky.pipeline));
@@ -430,25 +430,27 @@ private:
 
             // Temp colors so that we can easily set RGB values in range of 255
             glm::vec4 tempColor1 = selected.data.color1 * 255.f;
-            glm::vec4 tempColor2 = selected.data.color2 * 255.f;
             
-            ImGui::InputFloat4("Color 1", (float*)& tempColor1);
-            ImGui::InputFloat4("Color 2", (float*)& tempColor2);
-
+            ImGui::SliderFloat4("Color 1", (float*)& tempColor1, 0.f, 255.f);
             selected.data.color1 = tempColor1 / 255.f;
-            selected.data.color2 = tempColor2 / 255.f;
 
-            if(strcmp(selected.name, "sky") == 0){
-                // Temp colors so that we can easily set RGB values in range of 255
-                glm::vec4 tempColor3 = selected.data.color3 * 255.f;
-                glm::vec4 tempColor4 = selected.data.color4 * 255.f;
-
-                ImGui::InputFloat4("Color 3", (float*)& tempColor3);
-                ImGui::InputFloat4("Color 4", (float*)& tempColor4);
-
-                selected.data.color3 = tempColor3 / 255.f;
-                selected.data.color4 = tempColor4 / 255.f;
+            if(strcmp(selected.name, "gradient") == 0){
+                glm::vec4 tempColor2 = selected.data.color2 * 255.f;
+                ImGui::SliderFloat4("Color 2", (float*)& tempColor2, 0.f, 255.f);
+                selected.data.color2 = tempColor2 / 255.f;
             }
+
+            // if(strcmp(selected.name, "sky") == 0){
+            //     // Temp colors so that we can easily set RGB values in range of 255
+            //     glm::vec4 tempColor3 = selected.data.color3 * 255.f;
+            //     glm::vec4 tempColor4 = selected.data.color4 * 255.f;
+
+            //     ImGui::InputFloat4("Color 3", (float*)& tempColor3);
+            //     ImGui::InputFloat4("Color 4", (float*)& tempColor4);
+
+            //     selected.data.color3 = tempColor3 / 255.f;
+            //     selected.data.color4 = tempColor4 / 255.f;
+            // }
         }
         ImGui::End();
 
