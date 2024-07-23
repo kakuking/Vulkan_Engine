@@ -9,11 +9,11 @@ layout( push_constant ) uniform constants {
     vec4 data2;
     vec4 data3;
     vec4 data4;
+    mat4 viewMatrix;
 } PushConstants;
 
 void main(){
     ivec2 texelCoord = ivec2(gl_GlobalInvocationID.xy);
-
 	ivec2 size = imageSize(image);
 
     vec4 topColor = PushConstants.data1;
@@ -21,7 +21,11 @@ void main(){
 
     if(texelCoord.x < size.x && texelCoord.y < size.y)
     {
-        float blend = float(texelCoord.y)/(size.y); 
+        vec2 normalizedCoord = (vec2(texelCoord)/vec2(size)) * 2.0 - 1.0;
+        vec4 transformedCoord = PushConstants.viewMatrix * vec4(normalizedCoord, 0.0, 1.0);
+
+        // float blend = float(texelCoord.y)/(size.y); 
+        float blend = (transformedCoord.y + 1.0) / 2.0;
     
         imageStore(image, texelCoord, mix(topColor,bottomColor, blend));
     }

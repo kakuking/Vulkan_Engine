@@ -72,8 +72,8 @@ public:
         setupCommandResources();
         setupSyncStructures();
         setupDescriptors();
-        setupPipeline();
         setupViewAndProjMatrices();
+        setupPipeline();
         setupDefaultRectangleData();
         setupImgui();
     }
@@ -389,6 +389,7 @@ private:
         gradient.data = {};
         gradient.data.color1 = glm::vec4(1, 1, 0, 1);
         gradient.data.color2 = glm::vec4(0, 0, 1, 1);
+        gradient.data.viewMatrix = _view;
 
         VK_CHECK(vkCreateComputePipelines(_device,VK_NULL_HANDLE,1,&computePipelineCreateInfo, nullptr, &gradient.pipeline));
 
@@ -399,6 +400,7 @@ private:
         sky.name = "sky";
         sky.data = {};
         sky.data.color1 = glm::vec4(0.1, 0.2, 0.4 ,0.97);
+        sky.data.viewMatrix = _view;
 
         VK_CHECK(vkCreateComputePipelines(_device,VK_NULL_HANDLE,1,&computePipelineCreateInfo, nullptr, &sky.pipeline));
 
@@ -905,7 +907,7 @@ private:
     }
 
     void setupViewAndProjMatrices(){
-        _view = glm::lookAt(glm::vec3(0.0f, 0.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        setViewMatrix(glm::vec3(0.0f, 0.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         setProjMatrix();
     }
 
@@ -922,6 +924,10 @@ private:
 
     void setViewMatrix(glm::vec3 eye, glm::vec3 center, glm::vec3 up){
         _view = glm::lookAt(eye, center, up);
+
+        for(ComputeEffect& effect: _backgroundEffects){
+            effect.data.viewMatrix = _view;
+        }
     }
 
     void setupDefaultRectangleData(){

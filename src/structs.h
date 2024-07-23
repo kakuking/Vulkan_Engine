@@ -60,6 +60,7 @@ struct ComputeShaderPushConstants{
     glm::vec4 color2;
     glm::vec4 color3;
     glm::vec4 color4;
+    glm::mat4 viewMatrix;
 };
 
 struct MeshPushConstants{
