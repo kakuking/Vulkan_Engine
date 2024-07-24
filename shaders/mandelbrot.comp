@@ -1,0 +1,63 @@
+#version 460
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(rgba16f, set = 0, binding = 0) uniform image2D image;
+
+layout( push_constant ) uniform constants {
+    vec4 data1;
+    vec4 data2;
+    vec4 data3;
+    vec4 data4;
+    mat4 viewMatrix;
+} PushConstants;
+
+const float MAX_ITER = 128;
+const float SPEED = 10;
+
+vec3 hash(float m){
+    float x = fract(sin(m) * 5625.246);
+    float y = fract(sin(m + x) * 2216.486);
+    float z = fract(sin(x + y) * 8276.352);
+    return vec3(x, y, z);
+}
+
+float mandelbrot(vec2 uv){
+    vec2 c = 2.0*uv - vec2(0.7, 0.0);
+    vec2 z = vec2(0.0);
+    float iter = 0.0;
+    for(int i = 0; i < MAX_ITER; i++){
+        z = vec2(z.x*z.x - z.y*z.y, 2*z.x*z.y) + c;
+
+        if(dot(z, z) > 4.0)
+            return iter/MAX_ITER;
+        
+        iter++;
+    }
+
+    return 0.0;
+}
+
+void main(){
+    ivec2 texelCoord = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 size = imageSize(image);
+
+    if(texelCoord.x < size.x && texelCoord.y < size.y)
+    {
+        vec2 aspectRatio = vec2(size) / vec2(max(size.x, size.y));
+        vec2 normalizedCoord = ((vec2(texelCoord) / vec2(size)) * 2.0 - 1.0) * aspectRatio;
+
+        float zoom = exp(-0.1 * (PushConstants.data2.x + PushConstants.data3.x * SPEED)); // data2.x is user defined data3.x is time variable
+        
+        // Adjust coordinates for zoom and pan
+        vec2 center = PushConstants.data1.xy; // Center of the zoomed region
+        normalizedCoord = (normalizedCoord - center) * zoom + center;
+            
+        vec3 color = vec3(0.0);
+        float mandel = mandelbrot(normalizedCoord);
+        color += hash(mandel * 100.0);
+        color = pow(color, vec3(0.45)); // Gamma correction
+
+        imageStore(image, texelCoord, vec4(color, 1.0));
+    } 
+}

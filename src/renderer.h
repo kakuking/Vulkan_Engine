@@ -148,6 +148,9 @@ private:
     DeletionQueue _descriptorDeletionQueue;
     DeletionQueue _meshPipelineDeletionQueue;
 
+    float elapsedTimeMandelbrot = 0.0f; //for Mandelbrot 
+    float elapsedTimeJulia = 0.0f; //for Mandelbrot 
+
     void draw(){
         VK_CHECK(vkWaitForFences(_device, 1, &getCurrentFrame().renderFence, VK_TRUE, 1000000000));
 
@@ -320,6 +323,7 @@ private:
         pipelineBuilder.pipelineLayout = _meshPipelineLayout;
         pipelineBuilder.setShaders(vertexShader, fragShader);
         pipelineBuilder.setInputTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+        // pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_LINE);
         pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_FILL);
         // pipelineBuilder.setCullMode(VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_CLOCKWISE);
         pipelineBuilder.setCullMode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
@@ -369,6 +373,16 @@ private:
             fmt::print("Failed to load sky Shader!");
         }
 
+        VkShaderModule mandelbrotShader;
+        if(!Utility::loadShaderModule("shaders\\mandelbrot.comp.spv", _device, &mandelbrotShader)){
+            fmt::print("Failed to load mandelbrot Shader!");
+        }
+
+        VkShaderModule juliaShader;
+        if(!Utility::loadShaderModule("shaders\\julia.comp.spv", _device, &juliaShader)){
+            fmt::print("Failed to load julia Shader!");
+        }
+
         VkPipelineShaderStageCreateInfo stageInfo{};
         stageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         stageInfo.pNext = nullptr;
@@ -404,11 +418,39 @@ private:
 
         VK_CHECK(vkCreateComputePipelines(_device,VK_NULL_HANDLE,1,&computePipelineCreateInfo, nullptr, &sky.pipeline));
 
+        computePipelineCreateInfo.stage.module = mandelbrotShader;
+
+        ComputeEffect mandelbrot;
+        mandelbrot.layout = _backgroundShaderPipelineLayout;
+        mandelbrot.name = "mandelbrot";
+        mandelbrot.data = {};
+        mandelbrot.data.color1 = glm::vec4(0.0465f, 0.2252f, 0.f, 0.f);    // z and w dont matter
+        mandelbrot.data.viewMatrix = _view;
+
+        VK_CHECK(vkCreateComputePipelines(_device,VK_NULL_HANDLE,1,&computePipelineCreateInfo, nullptr, &mandelbrot.pipeline));
+
+        computePipelineCreateInfo.stage.module = juliaShader;
+
+        ComputeEffect julia;
+        julia.layout = _backgroundShaderPipelineLayout;
+        julia.name = "julia";
+        julia.data = {};
+        julia.data.color1 = glm::vec4(0.0465f, 0.2252f, 0.f, 0.f);    // z and w dont matter
+        julia.data.color2 = glm::vec4(-0.618f, 0.f, 0.f, 0.f);
+        julia.data.viewMatrix = _view;
+
+        VK_CHECK(vkCreateComputePipelines(_device,VK_NULL_HANDLE,1,&computePipelineCreateInfo, nullptr, &julia.pipeline));
+
         _backgroundEffects.push_back(gradient);
         _backgroundEffects.push_back(sky);
+        _backgroundEffects.push_back(mandelbrot);
+        _backgroundEffects.push_back(julia);
 
         vkDestroyShaderModule(_device, gradientShader, nullptr);
         vkDestroyShaderModule(_device, skyShader, nullptr);
+        vkDestroyShaderModule(_device, mandelbrotShader, nullptr);
+        vkDestroyShaderModule(_device, juliaShader, nullptr);
+
         _mainDeletionQueue.pushFunction([&]() {
             vkDestroyPipelineLayout(_device, _backgroundShaderPipelineLayout, nullptr);
             for (size_t i = 0; i < _backgroundEffects.size(); i++)
@@ -418,44 +460,106 @@ private:
         });
     }
 
+    float getTimeMandelbrot(float& timeVariable) {
+        static auto lastTimeMandelbrot = std::chrono::high_resolution_clock::now();
+
+        if (_currentBackground == 2) {
+            auto now = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<float> delta = now - lastTimeMandelbrot;
+            timeVariable += delta.count();
+            lastTimeMandelbrot = now;
+            // fmt::println("elapsedTime: {}", timeVariable);
+        } else {
+            lastTimeMandelbrot = std::chrono::high_resolution_clock::now(); // Reset the timer if condition is false
+        }
+
+        return timeVariable;
+    }
+
+    float getTimeJulia(float& timeVariable) {
+        static auto lastTimeJulia = std::chrono::high_resolution_clock::now();
+
+        if (_currentBackground == 3) {
+            auto now = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<float> delta = now - lastTimeJulia;
+            timeVariable += delta.count();
+            lastTimeJulia = now;
+            // fmt::println("elapsedTime: {}", timeVariable);
+        } else {
+            lastTimeJulia = std::chrono::high_resolution_clock::now(); // Reset the timer if condition is false
+        }
+
+        return timeVariable;
+    }
+
     void renderImgui(){
         if(ImGui::Begin("Background")) {
             ComputeEffect& selected = _backgroundEffects[_currentBackground];
 
-            ImGui::Text("Selected Effect", selected.name);
+            ImGui::Text("Selected Effect: %s", selected.name);
 
             ImGui::SliderInt("Effect Index: ", &_currentBackground, 0, _backgroundEffects.size() - 1);
 
             _currentBackground = std::clamp(_currentBackground, 0, (int)(_backgroundEffects.size() - 1));
 
             // Temp colors so that we can easily set RGB values in range of 255
-            glm::vec4 tempColor1 = selected.data.color1 * 255.f;
             
-            ImGui::SliderFloat4("Color 1", (float*)& tempColor1, 0.f, 255.f);
-            selected.data.color1 = tempColor1 / 255.f;
-
             if(strcmp(selected.name, "gradient") == 0){
+                glm::vec4 tempColor1 = selected.data.color1 * 255.f;
                 glm::vec4 tempColor2 = selected.data.color2 * 255.f;
+
+                ImGui::SliderFloat4("Color 1", (float*)& tempColor1, 0.f, 255.f);
                 ImGui::SliderFloat4("Color 2", (float*)& tempColor2, 0.f, 255.f);
+
+                selected.data.color1 = tempColor1 / 255.f;
                 selected.data.color2 = tempColor2 / 255.f;
+            } else if(strcmp(selected.name, "sky") == 0) {
+                glm::vec4 tempColor1 = selected.data.color1 * 255.f;
+
+                ImGui::SliderFloat4("Color 1", (float*)& tempColor1, 0.f, 255.f);
+
+                selected.data.color1 = tempColor1 / 255.f;
+            }
+            
+            // For Time Dependant ones
+            if(strcmp(selected.name, "mandelbrot") == 0) {
+                ImGui::SliderFloat2("Position of Zoom", (float*)& selected.data.color1, -1.0f, 1.0f);
+                ImGui::SliderFloat("Zoom Level", (float*)& selected.data.color2, 0.f, 100.f);
+                // ImGui::Text("Time: %d", selected.data.color3.x);
+
+                selected.data.color3.x = getTimeMandelbrot(elapsedTimeMandelbrot);
+            } else {
+                getTimeMandelbrot(elapsedTimeMandelbrot);
             }
 
-            // if(strcmp(selected.name, "sky") == 0){
-            //     // Temp colors so that we can easily set RGB values in range of 255
-            //     glm::vec4 tempColor3 = selected.data.color3 * 255.f;
-            //     glm::vec4 tempColor4 = selected.data.color4 * 255.f;
+            if(strcmp(selected.name, "julia") == 0) {
+                ImGui::SliderFloat2("Position of Zoom", (float*)& selected.data.color1, -1.0f, 1.0f);
+                ImGui::SliderFloat2("C", (float*)& selected.data.color2, -2.0f, 2.0f);
+                ImGui::SliderFloat("Zoom Level", (float*)& selected.data.color3, -10.f, 100.f);
 
-            //     ImGui::InputFloat4("Color 3", (float*)& tempColor3);
-            //     ImGui::InputFloat4("Color 4", (float*)& tempColor4);
+                selected.data.color4.x = getTimeJulia(elapsedTimeJulia);
+            } else {
+                getTimeJulia(elapsedTimeJulia);
+            }
+            
+            /*
+            if(strcmp(selected.name, "sky") == 0){
+                // Temp colors so that we can easily set RGB values in range of 255
+                glm::vec4 tempColor3 = selected.data.color3 * 255.f;
+                glm::vec4 tempColor4 = selected.data.color4 * 255.f;
 
-            //     selected.data.color3 = tempColor3 / 255.f;
-            //     selected.data.color4 = tempColor4 / 255.f;
-            // }
+                ImGui::InputFloat4("Color 3", (float*)& tempColor3);
+                ImGui::InputFloat4("Color 4", (float*)& tempColor4);
+
+                selected.data.color3 = tempColor3 / 255.f;
+                selected.data.color4 = tempColor4 / 255.f;
+            }
+            */
         }
         ImGui::End();
 
         static int prevUseOrtho = _useOrtho;
-        static glm::vec3 prevEye{0.f, 0.f, 2.f}, prevCenter{0.f, 0.f, 0.f}, prevUp{0.f, 1.f, 0.f};
+        static glm::vec3 prevEye{0.f, 0.f, 2.f}, prevCenter{0.f, 0.f, 20.f}, prevUp{0.f, 1.f, 0.f};
         static float prevFOV = _fov;
 
         if(ImGui::Begin("Camera Setting")) {
@@ -909,7 +1013,7 @@ private:
     }
 
     void setupViewAndProjMatrices(){
-        setViewMatrix(glm::vec3(0.0f, 0.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        setViewMatrix(glm::vec3(0.0f, 0.0f, 2.0f), glm::vec3(0.0f, 0.0f, 20.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         setProjMatrix();
     }
 

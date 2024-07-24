@@ -291,6 +291,7 @@ namespace Bootstrap{
 
             VkPhysicalDeviceFeatures deviceFeatures{};
             deviceFeatures.samplerAnisotropy = VK_TRUE;
+            deviceFeatures.fillModeNonSolid = VK_TRUE;
 
             features11.pNext = &features12;
             features12.pNext = &features13;
