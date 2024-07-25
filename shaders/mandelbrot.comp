@@ -12,7 +12,7 @@ layout( push_constant ) uniform constants {
     mat4 viewMatrix;
 } PushConstants;
 
-const float MAX_ITER = 128;
+const float MAX_ITER = 256;
 const float SPEED = 10;
 
 vec3 hash(float m){

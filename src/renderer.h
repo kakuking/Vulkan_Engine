@@ -155,6 +155,7 @@ private:
         VK_CHECK(vkWaitForFences(_device, 1, &getCurrentFrame().renderFence, VK_TRUE, 1000000000));
 
         getCurrentFrame().deletionQueue.flush();
+        getCurrentFrame().frameDescriptors.clearDescriptors(_device);
 
         VK_CHECK(vkResetFences(_device, 1, &getCurrentFrame().renderFence));
 
@@ -620,21 +621,9 @@ private:
 
         _drawImageDescriptors = _globalDescriptorAllocator.allocate(_device, _drawImageDescriptorLayout);
 
-        VkDescriptorImageInfo imageInfo{};
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-        imageInfo.imageView = _drawImage.imageView;
-
-        VkWriteDescriptorSet drawImageInfo{};
-        drawImageInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        drawImageInfo.pNext = nullptr;
-        
-        drawImageInfo.dstBinding = 0;
-        drawImageInfo.dstSet = _drawImageDescriptors;
-        drawImageInfo.descriptorCount = 1;
-        drawImageInfo.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        drawImageInfo.pImageInfo = &imageInfo;
-
-        vkUpdateDescriptorSets(_device, 1, &drawImageInfo, 0, nullptr);
+        DescriptorWriter writer;
+        writer.writeImage(0, _drawImage.imageView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        writer.updateSet(_device, _drawImageDescriptors);
 
         _descriptorDeletionQueue.pushFunction([&](){
             _globalDescriptorAllocator.destroyPool(_device);
@@ -656,6 +645,20 @@ private:
             VkCommandBufferAllocateInfo allocInfo = Initializers::commandBufferAllocateInfo(_frames[i].commandPool, 1);
 
             VK_CHECK(vkAllocateCommandBuffers(_device, &allocInfo, &_frames[i].mainCommandBuffer));
+
+            std::vector<DescriptorAllocator::PoolSizeRatio> frame_sizes = { 
+                { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3 },
+                { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3 },
+                { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3 },
+                { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4 },
+            };
+
+            _frames[i].frameDescriptors = DescriptorAllocator{};
+            _frames[i].frameDescriptors.setupPool(_device, 1000, frame_sizes);
+
+            _mainDeletionQueue.pushFunction([&, i]() {
+                _frames[i].frameDescriptors.destroyPool(_device);
+            });
         }
 
         VK_CHECK(vkCreateCommandPool(_device, &createInfo, nullptr, &_immediateCommandPool));
