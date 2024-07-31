@@ -127,10 +127,12 @@ private:
         vkDestroyShaderModule(_device, vertexShader, nullptr);
         vkDestroyShaderModule(_device, fragShader, nullptr);
 
-        // pipelineDeletionQueue.pushFunction([&](){
-        //     vkDestroyPipelineLayout(_device, pipelineLayout, nullptr);
-        //     vkDestroyPipeline(_device, pipeline, nullptr);
-        // });
+        pipelineDeletionQueue.pushFunction([=](){
+            // fmt::println("About to destroy mesh pipelinelayout");
+            vkDestroyPipelineLayout(_device, pipelineLayout, nullptr);
+            // fmt::println("About to destroy mesh pipeline");
+            vkDestroyPipeline(_device, pipeline, nullptr);
+        });
     }
 
     void createDescriptorSetLayout(VkDevice _device){

@@ -339,12 +339,12 @@ private:
                 vkDestroyDescriptorSetLayout(_device, mesh->setLayout, nullptr);
             });
 
-            _meshPipelineDeletionQueue.pushFunction([&]{
-                // fmt::println("About to destroy mesh pipelinelayout");
-                vkDestroyPipelineLayout(_device, mesh->pipelineLayout, nullptr);
-                // fmt::println("About to destroy mesh pipeline");
-                vkDestroyPipeline(_device, mesh->pipeline, nullptr);
-            });
+            // _meshPipelineDeletionQueue.pushFunction([=]{
+            //     // fmt::println("About to destroy mesh pipelinelayout");
+            //     vkDestroyPipelineLayout(_device, mesh->pipelineLayout, nullptr);
+            //     // fmt::println("About to destroy mesh pipeline");
+            //     vkDestroyPipeline(_device, mesh->pipeline, nullptr);
+            // });
 
             // fmt::println("Uploaded mesh");
         }

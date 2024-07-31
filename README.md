@@ -7,7 +7,7 @@ Using GLFW, Vulkan, FMT, IMGUI and VKBOOTSTRAP
 - [x] Pray 🙏
 - [x] Pray 🙏
 - [x] Pray 🙏
-- [ ] Pray 🙏
-- [ ] Pray 🙏
+- [x] Pray 🙏
+- [x] Pray 🙏
 - [ ] Pray 🙏
 - [ ] 😎
