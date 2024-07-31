@@ -28,6 +28,7 @@ public:
         createPipeline(_device, drawImageFormat, depthImageFormat);
     }
 
+
     void update(VkDevice _device, VmaAllocator& allocator, DescriptorAllocator& _descriptorAllocator) override {
         updateUniformBuffer(_device, allocator);
 
