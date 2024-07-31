@@ -24,7 +24,7 @@ public:
 
     VmaAllocator _allocator;
 
-    DescriptorAllocator _globalDescriptorAllocator;
+    DescriptorAllocator _globalDescriptorAllocator;     // Use for the background draw image
 
     VkQueue _graphicsQueue;
     uint32_t _graphicsQueueFamily;
@@ -53,7 +53,8 @@ public:
     std::vector<ComputeEffect> _backgroundEffects;
     int _currentBackground{0};
 
-    MeshBuffers _meshOpaque, _meshAlpha;
+    MeshBuffer _meshOpaque, _meshAlpha;
+    std::vector<MeshBuffer*> _meshes;
 
     VkFence _immediateFence;
     VkCommandBuffer _immediateCommandBuffer;
@@ -74,8 +75,10 @@ public:
         setupDescriptors();
         setupViewAndProjMatrices();
         setupPipeline();
-        setupDefaultRectangleData();
+        // setupDefaultRectangleData();
         setupImgui();
+
+        frameBufferResized = false;
     }
 
     void run(){
@@ -83,18 +86,28 @@ public:
         int frameCount = 0;
         auto startTime = std::chrono::high_resolution_clock::now();
 
+        fmt::println("In Run");
+
+
         while(!glfwWindowShouldClose(_window)){
+            // fmt::println("in loop");
+
             auto frameStartTime = std::chrono::high_resolution_clock::now();
             glfwPollEvents();
+
             if(frameBufferResized) {
                 frameBufferResized = false;
                 recreateSwapChain();
             }
+            // fmt::println("After checking framebuffer");
 
             ImGui_ImplGlfw_NewFrame();
             ImGui_ImplVulkan_NewFrame();
             ImGui::NewFrame();
+            // fmt::println("About to render imgui");
             renderImgui();
+
+            // fmt::println("REaching Draw");
 
             draw();
 
@@ -119,6 +132,8 @@ public:
     void cleanup(){
         vkDeviceWaitIdle(_device);
 
+        getCurrentFrame().deletionQueue.flush();
+
         for (size_t i = 0; i < FRAME_OVERLAP; i++)
         {
             vkDestroyCommandPool(_device, _frames[i].commandPool, nullptr);
@@ -128,11 +143,16 @@ public:
             vkDestroySemaphore(_device, _frames[i].swapchainSemaphore, nullptr);
         }
 
-        cleanupSwapchain();
-        _mainDeletionQueue.flush();
+        for(auto& mesh: _meshes){
+            mesh->deletionQueue.flush();
+            mesh->pipelineDeletionQueue.flush();
+        }
+
         _meshPipelineDeletionQueue.flush();
         _descriptorDeletionQueue.flush();
-        
+        cleanupSwapchain();
+
+        _mainDeletionQueue.flush();
 
         vkDestroySurfaceKHR(_instance, _surface, nullptr);
         vkDestroyDevice(_device, nullptr);
@@ -152,6 +172,8 @@ private:
     float elapsedTimeJulia = 0.0f; //for Mandelbrot 
 
     void draw(){
+        // fmt::println("In Draw()");
+        
         VK_CHECK(vkWaitForFences(_device, 1, &getCurrentFrame().renderFence, VK_TRUE, 1000000000));
 
         getCurrentFrame().deletionQueue.flush();
@@ -224,12 +246,11 @@ private:
     }
 
     void drawGeometry(VkCommandBuffer command){
+        // fmt::println("Started draw geometry");
         VkRenderingAttachmentInfo colorAttachment = Initializers::attachmentInfo(_drawImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
         VkRenderingAttachmentInfo depthAttachment = Initializers::depthAttachmentInfo(_depthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
         VkRenderingInfo renderInfo = Initializers::renderingInfo(_drawExtent, &colorAttachment, &depthAttachment);
-
-        vkCmdBeginRendering(command, &renderInfo);
 
         VkViewport viewport{};
         viewport.x = 0;
@@ -245,12 +266,30 @@ private:
         scissor.extent.width = _drawExtent.width;
         scissor.extent.height = _drawExtent.height;
 
+        vkCmdBeginRendering(command, &renderInfo);  
         vkCmdSetViewport(command, 0, 1, &viewport);
         vkCmdSetScissor(command, 0, 1, &scissor);
-        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipeline);
 
+        for(auto& mesh: _meshes){
+            // fmt::println("New Mesh");
+
+            mesh->update(_device, _allocator, getCurrentFrame().frameDescriptors);
+
+            // fmt::println("Updated Mesh");
+
+            // add it to deletion queue every frame
+            getCurrentFrame().deletionQueue.pushFunction([&]{
+                Utility::destroyBuffer(_allocator, mesh->uniformBuffer);
+            });
+
+            mesh->draw(command, _proj * _view);
+            // fmt::println("Drew Mesh");
+        }
+        
+        /*
+        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipeline);
         // Opaque Objects draw - 
-        vkCmdSetDepthWriteEnable(command, VK_TRUE);
+        // vkCmdSetDepthWriteEnable(command, VK_TRUE);
         MeshPushConstants pushConstantsOpaque;
         pushConstantsOpaque.worldMatrix = _proj * _view;
         pushConstantsOpaque.vertexBuffer = _meshOpaque.vertexBufferAddress;
@@ -260,7 +299,7 @@ private:
         vkCmdDrawIndexed(command, _meshOpaque.indexCount, 1, 0, 0, 0);
 
         // Alpha Objects draw - 
-        vkCmdSetDepthWriteEnable(command, VK_FALSE);
+        // vkCmdSetDepthWriteEnable(command, VK_FALSE);
         MeshPushConstants pushConstantsAlpha;
         pushConstantsAlpha.worldMatrix = _proj * _view;
         pushConstantsAlpha.vertexBuffer = _meshAlpha.vertexBufferAddress;
@@ -268,6 +307,7 @@ private:
         vkCmdPushConstants(command, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &pushConstantsAlpha);
         vkCmdBindIndexBuffer(command, _meshAlpha.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(command, _meshAlpha.indexCount, 1, 0, 0, 0);
+        */
 
         vkCmdEndRendering(command);
     }
@@ -295,7 +335,25 @@ private:
 
     void setupPipeline(){
         setupBackgroundPipeline();
-        setupMeshPipeline();
+        // setupMeshPipeline();
+
+        for(auto& mesh: _meshes){
+            mesh->setup(_device, _allocator, _drawImage.imageFormat, _depthImage.imageFormat);
+
+            uploadExternalMesh(*mesh);
+
+            _mainDeletionQueue.pushFunction([&]{
+                Utility::destroyBuffer(_allocator, mesh->vertexBuffer);
+                Utility::destroyBuffer(_allocator, mesh->indexBuffer);
+            });
+
+            _meshPipelineDeletionQueue.pushFunction([&]{
+                vkDestroyPipelineLayout(_device, mesh->pipelineLayout, nullptr);
+                vkDestroyPipeline(_device, mesh->pipeline, nullptr);
+            });
+
+            fmt::println("Uploaded mesh");
+        }
     }
 
     void setupMeshPipeline(){
@@ -560,7 +618,7 @@ private:
         ImGui::End();
 
         static int prevUseOrtho = _useOrtho;
-        static glm::vec3 prevEye{0.f, 0.f, 2.f}, prevCenter{0.f, 0.f, 20.f}, prevUp{0.f, 1.f, 0.f};
+        static glm::vec3 prevEye{0.f, 0.f, 2.f}, prevCenter{0.f, 0.f, 0.f}, prevUp{0.f, 1.f, 0.f};
         static float prevFOV = _fov;
 
         if(ImGui::Begin("Camera Setting")) {
@@ -672,11 +730,11 @@ private:
         });
     }
 
-    MeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices){
+    MeshBuffer uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices){
         const size_t vertexBufferSize = vertices.size() * sizeof(Vertex);
         const size_t indexBufferSize = indices.size() * sizeof(uint32_t);
 
-        MeshBuffers newSurface;
+        MeshBuffer newSurface;
         newSurface.indexCount = static_cast<uint32_t>(indices.size());
 
         newSurface.vertexBuffer = Utility::createBuffer(_allocator, vertexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
@@ -711,9 +769,50 @@ private:
             vkCmdCopyBuffer(command, stagingBuffer.buffer, newSurface.indexBuffer.buffer, 1, &indexCopy);
         });
 
-        destroyBuffer(stagingBuffer);
+        Utility::destroyBuffer(_allocator, stagingBuffer);
 
         return newSurface;
+    }
+
+    void uploadExternalMesh(MeshBuffer& newSurface){
+        const size_t vertexBufferSize = newSurface.vertices.size() * sizeof(Vertex);
+        const size_t indexBufferSize = newSurface.indices.size() * sizeof(uint32_t);
+
+        newSurface.vertexBuffer = Utility::createBuffer(_allocator, vertexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+
+        VkBufferDeviceAddressInfo deviceAddressInfo{};
+        deviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+        deviceAddressInfo.buffer = newSurface.vertexBuffer.buffer;
+
+        newSurface.vertexBufferAddress = vkGetBufferDeviceAddress(_device, &deviceAddressInfo);
+
+        newSurface.indexBuffer = Utility::createBuffer(_allocator, indexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+
+        AllocatedBuffer stagingBuffer = Utility::createBuffer(_allocator, vertexBufferSize + indexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
+
+        void* data = stagingBuffer.allocation->GetMappedData();
+
+        memcpy(data, newSurface.vertices.data(), vertexBufferSize);
+        memcpy((char*)data + vertexBufferSize, newSurface.indices.data(), indexBufferSize);
+
+        immediateSubmit([&](VkCommandBuffer command){
+            VkBufferCopy vertexCopy{0};
+            vertexCopy.dstOffset = 0;
+            vertexCopy.srcOffset = 0;
+            vertexCopy.size = vertexBufferSize;
+
+            VkBufferCopy indexCopy{0};
+            indexCopy.dstOffset = 0;
+            indexCopy.srcOffset = vertexBufferSize;
+            indexCopy.size = indexBufferSize;
+
+            vkCmdCopyBuffer(command, stagingBuffer.buffer, newSurface.vertexBuffer.buffer, 1, &vertexCopy);
+            vkCmdCopyBuffer(command, stagingBuffer.buffer, newSurface.indexBuffer.buffer, 1, &indexCopy);
+        });
+
+        Utility::destroyBuffer(_allocator, stagingBuffer);
+
+        return;
     }
 
     void setupSyncStructures(){
@@ -895,7 +994,12 @@ private:
 
         // Set everything back up again
         setupSwapchain();
-        setupMeshPipeline();
+        // setupMeshPipeline();
+
+        for(auto& mesh: _meshes){
+            mesh->remakePipeline(_device, _drawImage.imageFormat, _depthImage.imageFormat);
+        }
+
         setupDescriptors();
 
         // Set the new projection matrix
@@ -998,10 +1102,7 @@ private:
         }
     }
 
-    void destroyBuffer(const AllocatedBuffer& buffer){
-        vmaDestroyBuffer(_allocator, buffer.buffer, buffer.allocation);
-    }
-
+    
     void destroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator) {
         auto func = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
 
@@ -1016,7 +1117,7 @@ private:
     }
 
     void setupViewAndProjMatrices(){
-        setViewMatrix(glm::vec3(0.0f, 0.0f, 2.0f), glm::vec3(0.0f, 0.0f, 20.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        setViewMatrix(glm::vec3(0.0f, 0.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         setProjMatrix();
     }
 
@@ -1108,10 +1209,10 @@ private:
 
         //delete the rectangle data on engine shutdown
         _mainDeletionQueue.pushFunction([&](){
-            destroyBuffer(_meshOpaque.indexBuffer);
-            destroyBuffer(_meshOpaque.vertexBuffer);
-            destroyBuffer(_meshAlpha.indexBuffer);
-            destroyBuffer(_meshAlpha.vertexBuffer);
+            Utility::destroyBuffer(_allocator, _meshOpaque.indexBuffer);
+            Utility::destroyBuffer(_allocator, _meshOpaque.vertexBuffer);
+            Utility::destroyBuffer(_allocator, _meshAlpha.indexBuffer);
+            Utility::destroyBuffer(_allocator, _meshAlpha.vertexBuffer);
         });
     }
 };

@@ -66,14 +66,6 @@ struct AllocatedBuffer{
     VmaAllocationInfo info;
 };
 
-struct MeshBuffers{
-    AllocatedBuffer vertexBuffer;
-    AllocatedBuffer indexBuffer;
-    uint32_t indexCount;
-
-    VkDeviceAddress vertexBufferAddress;
-};
-
 struct Vertex {
     glm::vec3 position;
     float uv_x;
@@ -382,4 +374,31 @@ struct SwapChainSupportDetails {
 
     return details;
 }
+};
+
+struct MeshBuffer{
+public:
+    AllocatedBuffer vertexBuffer;
+    AllocatedBuffer indexBuffer;
+    AllocatedBuffer uniformBuffer;
+    uint32_t indexCount;
+
+    VkDeviceAddress vertexBufferAddress;
+
+    std::vector<Vertex> vertices; 
+    std::vector<uint32_t> indices;
+
+    VkPipelineLayout pipelineLayout;
+    VkPipeline pipeline;
+
+    DeletionQueue pipelineDeletionQueue, deletionQueue;
+    virtual ~MeshBuffer() = default;
+
+    virtual void setup(VkDevice _device, VmaAllocator& _allocator, VkFormat drawImageFormat, VkFormat depthImageFormat){};
+    virtual void setVertexBufferAddress(VkDeviceAddress newAddress){};
+
+    virtual void remakePipeline(VkDevice _device, VkFormat drawImageFormat, VkFormat depthImageFormat){};
+
+    virtual void update(VkDevice _device, VmaAllocator& allocator,  DescriptorAllocator& _descriptorAllocator){};
+    virtual void draw(VkCommandBuffer& command, glm::mat4 viewProj){};
 };
