@@ -14,13 +14,13 @@ struct RectangleMesh: public MeshBuffer {
 public:
     std::string vertexShaderFile = "shaders\\shader.vert.spv", fragShaderFile = "shaders\\shader.frag.spv";
 
-    VkDescriptorSetLayout setLayout;
-    VkDescriptorSet set;
-
     void setup(VkDevice _device, VmaAllocator& _allocator, VkFormat drawImageFormat, VkFormat depthImageFormat) override {
         createDescriptorSetLayout(_device);
         createPipeline(_device, drawImageFormat, depthImageFormat);
         setupData();
+        // deletionQueue.pushFunction([&]{
+        //     Utility::destroyBuffer(_allocator, uniformBuffer);
+        // });
     }
 
     void remakePipeline(VkDevice _device, VkFormat drawImageFormat, VkFormat depthImageFormat) override {
@@ -57,14 +57,6 @@ public:
         vertexBufferAddress = address;
     }
 
-    void updateUniformBuffer(VkDevice device, VmaAllocator& allocator) {
-        uniformBuffer = Utility::createBuffer(allocator, sizeof(RectangleUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-
-        RectangleUniform* data = (RectangleUniform*)uniformBuffer.allocation->GetMappedData();
-        *data = {
-            glm::mat4(1.0f)
-        };
-    }
 
     void setVertexShader(std::string newName){
         vertexShaderFile = newName;
@@ -76,6 +68,21 @@ public:
 
 
 private:
+    void updateUniformBuffer(VkDevice device, VmaAllocator& allocator) {
+        uniformDeletionQueue.flush();
+
+        uniformBuffer = Utility::createBuffer(allocator, sizeof(RectangleUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+        uniformDeletionQueue.pushFunction([=]{
+            Utility::destroyBuffer(allocator, uniformBuffer);
+        });
+
+        RectangleUniform* data = (RectangleUniform*)uniformBuffer.allocation->GetMappedData();
+        *data = {
+            glm::mat4(1.0f)
+        };
+    }
+
     void createPipeline(VkDevice _device, VkFormat drawImageFormat, VkFormat depthImageFormat){
         VkShaderModule vertexShader;
         if(!Utility::loadShaderModule(vertexShaderFile.c_str(), _device, &vertexShader)){

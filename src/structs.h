@@ -391,7 +391,10 @@ public:
     VkPipelineLayout pipelineLayout;
     VkPipeline pipeline;
 
-    DeletionQueue pipelineDeletionQueue, deletionQueue;
+    VkDescriptorSetLayout setLayout;
+    VkDescriptorSet set;
+
+    DeletionQueue pipelineDeletionQueue, uniformDeletionQueue, deletionQueue;
     virtual ~MeshBuffer() = default;
 
     virtual void setup(VkDevice _device, VmaAllocator& _allocator, VkFormat drawImageFormat, VkFormat depthImageFormat){};

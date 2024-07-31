@@ -86,8 +86,6 @@ public:
         int frameCount = 0;
         auto startTime = std::chrono::high_resolution_clock::now();
 
-        fmt::println("In Run");
-
 
         while(!glfwWindowShouldClose(_window)){
             // fmt::println("in loop");
@@ -144,8 +142,9 @@ public:
         }
 
         for(auto& mesh: _meshes){
-            mesh->deletionQueue.flush();
+            mesh->uniformDeletionQueue.flush();
             mesh->pipelineDeletionQueue.flush();
+            mesh->deletionQueue.flush();
         }
 
         _meshPipelineDeletionQueue.flush();
@@ -246,7 +245,6 @@ private:
     }
 
     void drawGeometry(VkCommandBuffer command){
-        // fmt::println("Started draw geometry");
         VkRenderingAttachmentInfo colorAttachment = Initializers::attachmentInfo(_drawImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
         VkRenderingAttachmentInfo depthAttachment = Initializers::depthAttachmentInfo(_depthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
@@ -271,19 +269,9 @@ private:
         vkCmdSetScissor(command, 0, 1, &scissor);
 
         for(auto& mesh: _meshes){
-            // fmt::println("New Mesh");
-
             mesh->update(_device, _allocator, getCurrentFrame().frameDescriptors);
 
-            // fmt::println("Updated Mesh");
-
-            // add it to deletion queue every frame
-            getCurrentFrame().deletionQueue.pushFunction([&]{
-                Utility::destroyBuffer(_allocator, mesh->uniformBuffer);
-            });
-
             mesh->draw(command, _proj * _view);
-            // fmt::println("Drew Mesh");
         }
         
         /*
@@ -342,17 +330,23 @@ private:
 
             uploadExternalMesh(*mesh);
 
-            _mainDeletionQueue.pushFunction([&]{
+            _mainDeletionQueue.pushFunction([=]{
+                // fmt::println("About to destroy mesh vertex buffer");
                 Utility::destroyBuffer(_allocator, mesh->vertexBuffer);
+                // fmt::println("About to destroy mesh index buffer");
                 Utility::destroyBuffer(_allocator, mesh->indexBuffer);
+                // fmt::println("About to destroy desc set layout");
+                vkDestroyDescriptorSetLayout(_device, mesh->setLayout, nullptr);
             });
 
             _meshPipelineDeletionQueue.pushFunction([&]{
+                // fmt::println("About to destroy mesh pipelinelayout");
                 vkDestroyPipelineLayout(_device, mesh->pipelineLayout, nullptr);
+                // fmt::println("About to destroy mesh pipeline");
                 vkDestroyPipeline(_device, mesh->pipeline, nullptr);
             });
 
-            fmt::println("Uploaded mesh");
+            // fmt::println("Uploaded mesh");
         }
     }
 
