@@ -12,6 +12,14 @@ struct Vertex {
 	vec4 color;
 };
 
+struct uni {
+	mat4 modelMatrx;
+};
+
+layout(binding = 0) uniform modelMat {
+	mat4 modelMatrix;
+};
+
 layout(buffer_reference, std430) readonly buffer VertexBuffer{
 	Vertex vertices[];
 };
@@ -20,7 +28,6 @@ layout(push_constant) uniform constants{
 	mat4 renderMatrix;
 	VertexBuffer vertexBuffer;
 } PushConstants;
-
 
 void main() 
 {

@@ -13,8 +13,8 @@ layout( push_constant ) uniform constants {
 } PushConstants;
 
 const float MAX_ITER = 128;
-const float SPEED = 0;
-const float ROT_SPEED = 0.0;
+const float SPEED = 0.0;
+const float ROT_SPEED = 0.2;
 
 vec3 hash(float m){
     float x = fract(sin(m) * 5625.246);
@@ -57,8 +57,8 @@ void main(){
 
         float radius = 0.7885;
         vec3 color = vec3(0.0);
-        float jVal = julia(normalizedCoord, PushConstants.data2.xy); //data2.xy is the c value
-        // float jVal = julia(normalizedCoord, vec2(radius*cos(ROT_SPEED * time), radius*sin(ROT_SPEED * time)));
+        // float jVal = julia(normalizedCoord, PushConstants.data2.xy); //data2.xy is the c value
+        float jVal = julia(normalizedCoord, vec2(radius*cos(ROT_SPEED * time), radius*sin(ROT_SPEED * time)));
         color += hash(jVal * 100.0);
         color = pow(color, vec3(0.45)); // Gamma correction
 

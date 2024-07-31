@@ -26,6 +26,10 @@ namespace Utility{
         return newBuffer;
     }
 
+    void destroyBuffer(VmaAllocator _allocator, const AllocatedBuffer& buffer){
+        vmaDestroyBuffer(_allocator, buffer.buffer, buffer.allocation);
+    }
+
     void transitionImage(VkCommandBuffer command, VkImage image, VkImageLayout currentLayout, VkImageLayout newLayout) {
         VkImageMemoryBarrier2 imageBarrier{};
         imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;

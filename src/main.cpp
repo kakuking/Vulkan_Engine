@@ -1,9 +1,13 @@
 #include "types.h"
 
 #include "renderer.h"
+#include "external_test.h"
 
 int main(){
     Renderer app;
+
+    RectangleMesh newMesh;
+    app._meshes.push_back(&newMesh);
 
     app.init();
 
