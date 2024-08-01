@@ -381,7 +381,8 @@ public:
     AllocatedBuffer vertexBuffer;
     AllocatedBuffer indexBuffer;
     AllocatedBuffer uniformBuffer;
-    uint32_t indexCount;
+
+    uint32_t indexCount, maxVertexCount, maxIndexCount;
 
     VkDeviceAddress vertexBufferAddress;
 
@@ -394,7 +395,7 @@ public:
     VkDescriptorSetLayout setLayout;
     VkDescriptorSet set;
 
-    DeletionQueue pipelineDeletionQueue, uniformDeletionQueue, deletionQueue;
+    DeletionQueue pipelineDeletionQueue, uniformDeletionQueue, deletionQueue, bufferDeletionQueue;
     virtual ~MeshBuffer() = default;
 
     virtual void setup(VkDevice _device, VmaAllocator& _allocator, VkFormat drawImageFormat, VkFormat depthImageFormat){};

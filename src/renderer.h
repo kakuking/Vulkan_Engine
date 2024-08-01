@@ -137,6 +137,7 @@ public:
         }
 
         for(auto& mesh: _meshes){
+            mesh->bufferDeletionQueue.flush();
             mesh->uniformDeletionQueue.flush();
             mesh->pipelineDeletionQueue.flush();
             mesh->deletionQueue.flush();
@@ -300,7 +301,7 @@ private:
 
             uploadExternalMesh(*mesh);
 
-            _mainDeletionQueue.pushFunction([=]{
+            mesh->bufferDeletionQueue.pushFunction([=]{
                 // fmt::println("About to destroy mesh vertex buffer");
                 Utility::destroyBuffer(_allocator, mesh->vertexBuffer);
                 // fmt::println("About to destroy mesh index buffer");
@@ -642,7 +643,10 @@ private:
         const size_t vertexBufferSize = newSurface.vertices.size() * sizeof(Vertex);
         const size_t indexBufferSize = newSurface.indices.size() * sizeof(uint32_t);
 
-        newSurface.vertexBuffer = Utility::createBuffer(_allocator, vertexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+        const size_t maxVertexBufferSize = newSurface.maxVertexCount * sizeof(Vertex);
+        const size_t maxIndexBufferSize = newSurface.maxIndexCount * sizeof(uint32_t);
+
+        newSurface.vertexBuffer = Utility::createBuffer(_allocator, maxVertexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
 
         VkBufferDeviceAddressInfo deviceAddressInfo{};
         deviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
@@ -650,7 +654,7 @@ private:
 
         newSurface.vertexBufferAddress = vkGetBufferDeviceAddress(_device, &deviceAddressInfo);
 
-        newSurface.indexBuffer = Utility::createBuffer(_allocator, indexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+        newSurface.indexBuffer = Utility::createBuffer(_allocator, maxIndexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
 
         AllocatedBuffer stagingBuffer = Utility::createBuffer(_allocator, vertexBufferSize + indexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
 
@@ -677,6 +681,25 @@ private:
         Utility::destroyBuffer(_allocator, stagingBuffer);
 
         return;
+    }
+
+    void copyBuffer(VkBuffer dstBuffer, void* src, size_t size){
+        AllocatedBuffer stagingBuffer = Utility::createBuffer(_allocator, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
+
+        void* data = stagingBuffer.allocation->GetMappedData();
+
+        memcpy(data, src, size);
+
+        immediateSubmit([&](VkCommandBuffer command){
+            VkBufferCopy copyRegion{0};
+            copyRegion.dstOffset = 0;
+            copyRegion.srcOffset = 0;
+            copyRegion.size = size;
+
+            vkCmdCopyBuffer(command, stagingBuffer.buffer, dstBuffer, 1, &copyRegion);
+        });
+
+        Utility::destroyBuffer(_allocator, stagingBuffer);
     }
 
     void setupSyncStructures(){
@@ -952,6 +975,45 @@ private:
         // Set Resize Callback
         glfwSetWindowUserPointer(_window, this);
         glfwSetFramebufferSizeCallback(_window, frameBufferResizeCallback);
+
+        glfwSetKeyCallback(_window, keyCall);
+    }
+
+    static void keyCall(GLFWwindow* window, int key, int scancode, int action, int mods){
+        auto app = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
+        app->keyCallInternal(window, key, scancode, action, mods);
+    }
+
+    void keyCallInternal(GLFWwindow* window, int key, int scancode, int action, int mods){
+        if (key == GLFW_KEY_SPACE){
+            for(auto& mesh: _meshes){
+                // vkDeviceWaitIdle(_device);
+                // mesh->bufferDeletionQueue.flush();
+
+                if(action == GLFW_PRESS){
+                    mesh->indices.push_back(2);
+                    mesh->indices.push_back(3);
+                    mesh->indices.push_back(4);
+                    mesh->indices.push_back(0);
+                    mesh->indices.push_back(5);
+                    mesh->indices.push_back(1);
+                    mesh->indexCount += 6;
+                }
+                
+                if(action == GLFW_RELEASE){
+                    mesh->indices.pop_back();
+                    mesh->indices.pop_back();
+                    mesh->indices.pop_back();
+                    mesh->indices.pop_back();
+                    mesh->indices.pop_back();
+                    mesh->indices.pop_back();
+                    mesh->indexCount-=6;
+                }
+
+                size_t s = mesh->indices.size() * sizeof(uint32_t);
+                copyBuffer(mesh->indexBuffer.buffer, mesh->indices.data(), s);
+            }
+        }
     }
 
     static void frameBufferResizeCallback(GLFWwindow* window, int width, int heigh){

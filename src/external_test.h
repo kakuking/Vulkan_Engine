@@ -18,9 +18,6 @@ public:
         createDescriptorSetLayout(_device);
         createPipeline(_device, drawImageFormat, depthImageFormat);
         setupData();
-        // deletionQueue.pushFunction([&]{
-        //     Utility::destroyBuffer(_allocator, uniformBuffer);
-        // });
     }
 
     void remakePipeline(VkDevice _device, VkFormat drawImageFormat, VkFormat depthImageFormat) override {
@@ -113,6 +110,7 @@ private:
         pipelineBuilder.pipelineLayout = pipelineLayout;
         pipelineBuilder.setShaders(vertexShader, fragShader);
         pipelineBuilder.setInputTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+        // pipelineBuilder.setInputTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP);
         pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_FILL);
         pipelineBuilder.setCullMode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
         pipelineBuilder.setMultisamplingNone();
@@ -143,28 +141,50 @@ private:
     }
 
     void setupData(){
-        vertices.resize(4);
-        indices.resize(6);
+
+        maxVertexCount = 6;
+        maxIndexCount = 12;
+
         indexCount = 6;
 
-        vertices[0].position = {1.0,-0.5,-1.0};
-        vertices[1].position = {1.0,0.5,-1.0};
-        vertices[2].position = {0.0,-0.5,-1.0};
-        vertices[3].position = {0.0,0.5,-1.0};
+        vertices.resize(6);
+        indices.resize(6);
+
+        vertices[0].position = {0.5,-0.5,0.0};
+        vertices[1].position = {0.5,0.5,0.0};
+        vertices[2].position = {-0.5,-0.5,0.0};
+        vertices[3].position = {-0.5,0.5,0.0};
+        vertices[4].position = {-0.75,0.0,0.0};
+        vertices[5].position = {0.75,0.0,0.0};
         vertices[0].color = {1,0,1,1};
         vertices[1].color = {1,0,1,1};
         vertices[2].color = {1,0,1,1};
         vertices[3].color = {1,0,1,1};
+        vertices[4].color = {0,1,0,1};
+        vertices[5].color = {1,0,0,1};
+        
+        /*
         vertices[0].uv_x = 1;
         vertices[1].uv_x = 1;
         vertices[2].uv_x = 1;
         vertices[3].uv_x = 1;
+        vertices[4].uv_x = 1;
+        */
 
         indices[0] = 0;
         indices[1] = 1;
         indices[2] = 2;
+
         indices[3] = 2;
         indices[4] = 1;
         indices[5] = 3;
+
+        // indices[6] = 2;
+        // indices[7] = 3;
+        // indices[8] = 4;
+
+        // indices[9] = 0;
+        // indices[10] = 5;
+        // indices[11] = 1;
     }
 };

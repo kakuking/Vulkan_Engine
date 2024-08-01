@@ -36,6 +36,6 @@ void main()
 
 	//Basically Proj * view * position
 	gl_Position = PushConstants.renderMatrix * vec4(v.position, 1.0f);
-	outColor = vec4(v.color.xyz, v.uvX);
+	outColor = v.color;
 	outUV = vec2(v.uvX, v.uvY);
 }
