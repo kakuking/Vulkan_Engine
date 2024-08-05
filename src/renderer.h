@@ -49,7 +49,7 @@ public:
     std::vector<ComputeEffect> _backgroundEffects;
     int _currentBackground{0};
 
-    std::vector<MeshBuffer*> _meshes;
+    std::vector<Mesh*> _meshes;
 
     VkFence _immediateFence;
     VkCommandBuffer _immediateCommandBuffer;
@@ -657,7 +657,7 @@ private:
         });
     }
 
-    void uploadExternalMesh(MeshBuffer& newSurface){
+    void uploadExternalMesh(Mesh& newSurface){
         const size_t vertexBufferSize = newSurface.vertices.size() * sizeof(Vertex);
         const size_t indexBufferSize = newSurface.indices.size() * sizeof(uint32_t);
 

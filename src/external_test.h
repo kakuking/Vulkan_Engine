@@ -10,7 +10,7 @@ struct RectangleUniform {
     glm::mat4 modelMatrix;
 };
 
-struct RectangleMesh: public MeshBuffer {
+struct RectangleMesh: public Mesh {
 public:
     std::string vertexShaderFile = "shaders\\shader.vert.spv", fragShaderFile = "shaders\\shader.frag.spv";
 

@@ -376,7 +376,7 @@ struct SwapChainSupportDetails {
 }
 };
 
-struct MeshBuffer{
+struct Mesh{
 public:
     AllocatedBuffer vertexBuffer;
     AllocatedBuffer indexBuffer;
@@ -398,7 +398,7 @@ public:
     VkDescriptorSet set;
 
     DeletionQueue pipelineDeletionQueue, uniformDeletionQueue, deletionQueue, bufferDeletionQueue;
-    virtual ~MeshBuffer() = default;
+    virtual ~Mesh() = default;
 
     virtual void setup(VkDevice _device, VmaAllocator& _allocator, VkFormat drawImageFormat, VkFormat depthImageFormat){};
     virtual void setVertexBufferAddress(VkDeviceAddress newAddress){};
