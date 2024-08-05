@@ -18,6 +18,7 @@ public:
         createDescriptorSetLayout(_device);
         createPipeline(_device, drawImageFormat, depthImageFormat);
         setupData();
+        setupUniformBuffer(_device, _allocator);
     }
 
     void remakePipeline(VkDevice _device, VkFormat drawImageFormat, VkFormat depthImageFormat) override {
@@ -25,9 +26,17 @@ public:
         createPipeline(_device, drawImageFormat, depthImageFormat);
     }
 
+    void imguiInterface(){
+        if(ImGui::Begin("External Mesh Test")){
+            ImGui::SliderFloat("Rotation Speed", &rotationSpeed, -20.f, 20.f);
+
+            ImGui::SliderFloat3("Axis of Rotation", (float*)& axisOfRotation, -20.f, 20.f);
+        }
+        ImGui::End();
+    }
 
     void update(VkDevice _device, VmaAllocator& allocator, DescriptorAllocator& _descriptorAllocator) override {
-        updateUniformBuffer(_device, allocator);
+        updateUniformBuffer();
 
         set = _descriptorAllocator.allocate(_device, setLayout);
 
@@ -94,18 +103,26 @@ public:
 
 
 private:
-    void updateUniformBuffer(VkDevice device, VmaAllocator& allocator) {
-        uniformDeletionQueue.flush();
-
+    void setupUniformBuffer(VkDevice device, VmaAllocator& allocator){
         uniformBuffer = Utility::createBuffer(allocator, sizeof(RectangleUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
         uniformDeletionQueue.pushFunction([=]{
             Utility::destroyBuffer(allocator, uniformBuffer);
         });
+    }
+
+    float rotationSpeed = 0.1f;
+    glm::vec3 axisOfRotation = glm::vec3(0.0f, 0.0f, 1.0f);
+
+    std::chrono::time_point<std::chrono::high_resolution_clock> startTime = std::chrono::high_resolution_clock::now();
+
+    void updateUniformBuffer() {
+        float elapsedTime = getElapsedTime();
+        float rotAngle = elapsedTime * rotationSpeed;
 
         RectangleUniform* data = (RectangleUniform*)uniformBuffer.allocation->GetMappedData();
         *data = {
-            glm::mat4(1.0f)
+            glm::rotate(glm::mat4(1.0f), rotAngle, axisOfRotation)
         };
     }
 
@@ -178,12 +195,15 @@ private:
         vertices.resize(6);
         indices.resize(6);
 
+        float h = 1.0 * std::sqrt(3)/2.f;
+        float extended = 0.5 + h;
+
         vertices[0].position = {0.5,-0.5,0.0};
         vertices[1].position = {0.5,0.5,0.0};
         vertices[2].position = {-0.5,-0.5,0.0};
         vertices[3].position = {-0.5,0.5,0.0};
-        vertices[4].position = {-0.75,0.0,0.0};
-        vertices[5].position = {0.75,0.0,0.0};
+        vertices[4].position = {-extended,0.0,0.0};
+        vertices[5].position = {extended,0.0,0.0};
         vertices[0].color = {1,0,1,1};
         vertices[1].color = {1,0,1,1};
         vertices[2].color = {1,0,1,1};
@@ -216,5 +236,12 @@ private:
         indices[10] = 5;
         indices[11] = 1;
         */
+    }
+
+    float getElapsedTime() {
+        // static auto startTime = std::chrono::high_resolution_clock::now();
+        auto currentTime = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<float> elapsed = currentTime - startTime;
+        return elapsed.count();
     }
 };

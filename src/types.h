@@ -27,6 +27,10 @@
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
 
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_vulkan.h"
+
 const uint32_t WIDTH = 800, HEIGHT = 600;
 
 const bool USE_VALIDATION_LAYERS = true;

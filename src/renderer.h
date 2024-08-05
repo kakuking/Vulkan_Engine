@@ -7,10 +7,6 @@
 #include "initializers.h"
 #include "pipelineBuilder.h"
 
-#include "imgui.h"
-#include "imgui_impl_glfw.h"
-#include "imgui_impl_vulkan.h"
-
 class Renderer{
 public:
     GLFWwindow* _window;
@@ -154,6 +150,10 @@ public:
         vkDestroyInstance(_instance, nullptr);
         
         cleanupWindow();
+    }
+
+    void addMesh(Mesh* newMesh){
+        _meshes.push_back(newMesh);
     }
 
 private:
@@ -588,6 +588,11 @@ private:
         }
 
         ImGui::End();
+
+        for(auto mesh: _meshes){
+            mesh->imguiInterface();
+        }
+
         ImGui::Render();
     }
 

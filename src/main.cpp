@@ -7,7 +7,7 @@ int main(){
     Renderer app;
 
     RectangleMesh newMesh;
-    app._meshes.push_back(&newMesh);
+    app.addMesh(&newMesh);
 
     app.init();
 

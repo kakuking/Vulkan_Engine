@@ -35,7 +35,7 @@ void main()
 	Vertex v = PushConstants.vertexBuffer.vertices[gl_VertexIndex];
 
 	//Basically Proj * view * position
-	gl_Position = PushConstants.renderMatrix * vec4(v.position, 1.0f);
+	gl_Position = PushConstants.renderMatrix * modelMatrix * vec4(v.position, 1.0f);
 	outColor = v.color;
 	outUV = vec2(v.uvX, v.uvY);
 }

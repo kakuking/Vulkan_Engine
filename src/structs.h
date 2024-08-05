@@ -409,4 +409,5 @@ public:
     virtual void draw(VkCommandBuffer& command, glm::mat4 viewProj){};
 
     virtual void keyUpdate(GLFWwindow* window, int key, int scancode, int action, int mods){};
+    virtual void imguiInterface(){};
 };
