@@ -384,6 +384,8 @@ public:
 
     uint32_t indexCount, maxVertexCount, maxIndexCount;
 
+    bool updateVertexBuffer, updateIndexBuffer;
+
     VkDeviceAddress vertexBufferAddress;
 
     std::vector<Vertex> vertices; 
@@ -405,4 +407,6 @@ public:
 
     virtual void update(VkDevice _device, VmaAllocator& allocator,  DescriptorAllocator& _descriptorAllocator){};
     virtual void draw(VkCommandBuffer& command, glm::mat4 viewProj){};
+
+    virtual void keyUpdate(GLFWwindow* window, int key, int scancode, int action, int mods){};
 };

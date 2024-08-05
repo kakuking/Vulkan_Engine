@@ -239,6 +239,24 @@ private:
     }
 
     void drawGeometry(VkCommandBuffer command){
+        
+        // Check if buffer needs to be updated, instead of in keyUpdate
+        for(auto& mesh: _meshes){
+            if(mesh->updateIndexBuffer){
+                size_t s = mesh->indices.size() * sizeof(uint32_t);
+                copyBuffer(mesh->indexBuffer.buffer, mesh->indices.data(), s);
+
+                mesh->updateIndexBuffer = false;
+            }
+
+            if(mesh->updateVertexBuffer){
+                size_t s = mesh->vertices.size() * sizeof(Vertex);
+                copyBuffer(mesh->vertexBuffer.buffer, mesh->vertices.data(), s);
+
+                mesh->updateVertexBuffer = false;
+            }
+        }
+
         VkRenderingAttachmentInfo colorAttachment = Initializers::attachmentInfo(_drawImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
         VkRenderingAttachmentInfo depthAttachment = Initializers::depthAttachmentInfo(_depthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
@@ -985,34 +1003,8 @@ private:
     }
 
     void keyCallInternal(GLFWwindow* window, int key, int scancode, int action, int mods){
-        if (key == GLFW_KEY_SPACE){
-            for(auto& mesh: _meshes){
-                // vkDeviceWaitIdle(_device);
-                // mesh->bufferDeletionQueue.flush();
-
-                if(action == GLFW_PRESS){
-                    mesh->indices.push_back(2);
-                    mesh->indices.push_back(3);
-                    mesh->indices.push_back(4);
-                    mesh->indices.push_back(0);
-                    mesh->indices.push_back(5);
-                    mesh->indices.push_back(1);
-                    mesh->indexCount += 6;
-                }
-                
-                if(action == GLFW_RELEASE){
-                    mesh->indices.pop_back();
-                    mesh->indices.pop_back();
-                    mesh->indices.pop_back();
-                    mesh->indices.pop_back();
-                    mesh->indices.pop_back();
-                    mesh->indices.pop_back();
-                    mesh->indexCount-=6;
-                }
-
-                size_t s = mesh->indices.size() * sizeof(uint32_t);
-                copyBuffer(mesh->indexBuffer.buffer, mesh->indices.data(), s);
-            }
+        for(auto& mesh: _meshes){
+            mesh->keyUpdate(window, key, scancode, action, mods);
         }
     }
 

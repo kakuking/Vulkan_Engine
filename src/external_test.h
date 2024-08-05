@@ -55,6 +55,34 @@ public:
         vertexBufferAddress = address;
     }
 
+    void keyUpdate(GLFWwindow* window, int key, int scancode, int action, int mods) override {
+        if (key == GLFW_KEY_SPACE){
+            if(action == GLFW_PRESS){
+                indices.push_back(2);
+                indices.push_back(3);
+                indices.push_back(4);
+                indices.push_back(0);
+                indices.push_back(5);
+                indices.push_back(1);
+                indexCount += 6;
+
+                updateIndexBuffer = true;
+            }
+            
+            if(action == GLFW_RELEASE){
+                indices.pop_back();
+                indices.pop_back();
+                indices.pop_back();
+                indices.pop_back();
+                indices.pop_back();
+                indices.pop_back();
+                indexCount-=6;
+
+                updateIndexBuffer = true;
+            }
+        }
+    }
+
 
     void setVertexShader(std::string newName){
         vertexShaderFile = newName;
@@ -179,12 +207,14 @@ private:
         indices[4] = 1;
         indices[5] = 3;
 
-        // indices[6] = 2;
-        // indices[7] = 3;
-        // indices[8] = 4;
+        /*
+        indices[6] = 2;
+        indices[7] = 3;
+        indices[8] = 4;
 
-        // indices[9] = 0;
-        // indices[10] = 5;
-        // indices[11] = 1;
+        indices[9] = 0;
+        indices[10] = 5;
+        indices[11] = 1;
+        */
     }
 };
