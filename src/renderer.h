@@ -319,7 +319,7 @@ private:
 
             uploadExternalMesh(*mesh);
 
-            mesh->bufferDeletionQueue.pushFunction([=]{
+            mesh->bufferDeletionQueue.pushFunction([this, mesh]{
                 // fmt::println("About to destroy mesh vertex buffer");
                 Utility::destroyBuffer(_allocator, mesh->vertexBuffer);
                 // fmt::println("About to destroy mesh index buffer");
@@ -894,6 +894,9 @@ private:
             glfwWaitEvents();
         }
 
+        WIDTH = static_cast<uint32_t>(width);
+        HEIGHT = static_cast<uint32_t>(height);
+
         // Wait for device to get idlt
         vkDeviceWaitIdle(_device);
 
@@ -999,18 +1002,19 @@ private:
         glfwSetWindowUserPointer(_window, this);
         glfwSetFramebufferSizeCallback(_window, frameBufferResizeCallback);
 
-        glfwSetKeyCallback(_window, keyCall);
+        glfwSetKeyCallback(_window, keyCallback);
+        glfwSetCursorPosCallback(_window, cursorCallback);
     }
 
-    static void keyCall(GLFWwindow* window, int key, int scancode, int action, int mods){
+    static void cursorCallback(GLFWwindow* window, double xpos, double ypos){
+        // float normalized_x = -1.f + 2.f*(xpos/(float)WIDTH);
+        // float normalized_y = -1.f + 2.f*(ypos/(float)HEIGHT);
+        // fmt::println("({}, {}) ===> ({}, {})", xpos, ypos, normalized_x, normalized_y);
+    }
+
+    static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods){
         auto app = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
-        app->keyCallInternal(window, key, scancode, action, mods);
-    }
-
-    void keyCallInternal(GLFWwindow* window, int key, int scancode, int action, int mods){
-        for(auto& mesh: _meshes){
-            mesh->keyUpdate(window, key, scancode, action, mods);
-        }
+        app->appKeyCallback(window, key, scancode, action, mods);
     }
 
     static void frameBufferResizeCallback(GLFWwindow* window, int width, int heigh){
@@ -1018,13 +1022,18 @@ private:
             app->frameBufferResized = true;
         }
 
+    void appKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods){
+        for(auto& mesh: _meshes){
+            mesh->keyUpdate(window, key, scancode, action, mods);
+        }
+    }
+
     void setupSurface(){
         if(glfwCreateWindowSurface(_instance, _window, nullptr, &_surface) != VK_SUCCESS){
             fmt::println("Failed to create window surface!");
         }
     }
 
-    
     void destroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator) {
         auto func = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
 

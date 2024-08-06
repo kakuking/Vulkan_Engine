@@ -106,19 +106,20 @@ private:
     void setupUniformBuffer(VkDevice device, VmaAllocator& allocator){
         uniformBuffer = Utility::createBuffer(allocator, sizeof(RectangleUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-        uniformDeletionQueue.pushFunction([=]{
+        uniformDeletionQueue.pushFunction([this, allocator]{
             Utility::destroyBuffer(allocator, uniformBuffer);
         });
     }
 
     float rotationSpeed = 0.1f;
+    float rotAngle = 0.f;
     glm::vec3 axisOfRotation = glm::vec3(0.0f, 0.0f, 1.0f);
 
-    std::chrono::time_point<std::chrono::high_resolution_clock> startTime = std::chrono::high_resolution_clock::now();
+    std::chrono::time_point<std::chrono::high_resolution_clock> prevTime = std::chrono::high_resolution_clock::now();
 
     void updateUniformBuffer() {
-        float elapsedTime = getElapsedTime();
-        float rotAngle = elapsedTime * rotationSpeed;
+        float timeDelta = getTimeDelta();
+        rotAngle += timeDelta * rotationSpeed;
 
         RectangleUniform* data = (RectangleUniform*)uniformBuffer.allocation->GetMappedData();
         *data = {
@@ -171,7 +172,7 @@ private:
         vkDestroyShaderModule(_device, vertexShader, nullptr);
         vkDestroyShaderModule(_device, fragShader, nullptr);
 
-        pipelineDeletionQueue.pushFunction([=](){
+        pipelineDeletionQueue.pushFunction([this, _device](){
             // fmt::println("About to destroy mesh pipelinelayout");
             vkDestroyPipelineLayout(_device, pipelineLayout, nullptr);
             // fmt::println("About to destroy mesh pipeline");
@@ -238,10 +239,11 @@ private:
         */
     }
 
-    float getElapsedTime() {
+    float getTimeDelta() {
         // static auto startTime = std::chrono::high_resolution_clock::now();
         auto currentTime = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<float> elapsed = currentTime - startTime;
+        std::chrono::duration<float> elapsed = currentTime - prevTime;
+        prevTime = currentTime;
         return elapsed.count();
     }
 };
