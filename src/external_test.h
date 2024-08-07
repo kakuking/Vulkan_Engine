@@ -65,15 +65,12 @@ public:
     }
 
     void keyUpdate(GLFWwindow* window, int key, int scancode, int action, int mods) override {
-        if (key == GLFW_KEY_SPACE){
+        if (key == GLFW_KEY_LEFT){
             if(action == GLFW_PRESS){
                 indices.push_back(2);
                 indices.push_back(3);
                 indices.push_back(4);
-                indices.push_back(0);
-                indices.push_back(5);
-                indices.push_back(1);
-                indexCount += 6;
+                indexCount += 3;
 
                 updateIndexBuffer = true;
             }
@@ -82,10 +79,64 @@ public:
                 indices.pop_back();
                 indices.pop_back();
                 indices.pop_back();
+                indexCount-=3;
+
+                updateIndexBuffer = true;
+            }
+        } else 
+        if (key == GLFW_KEY_RIGHT){
+            if(action == GLFW_PRESS){
+                indices.push_back(0);
+                indices.push_back(5);
+                indices.push_back(1);
+                indexCount += 3;
+
+                updateIndexBuffer = true;
+            }
+            
+            if(action == GLFW_RELEASE){
                 indices.pop_back();
                 indices.pop_back();
                 indices.pop_back();
-                indexCount-=6;
+                indexCount-=3;
+
+                updateIndexBuffer = true;
+            }
+        } else
+        if (key == GLFW_KEY_DOWN){
+            if(action == GLFW_PRESS){
+                indices.push_back(6);
+                indices.push_back(0);
+                indices.push_back(2);
+                indexCount += 3;
+
+                updateIndexBuffer = true;
+            }
+            
+            if(action == GLFW_RELEASE){
+                indices.pop_back();
+                indices.pop_back();
+                indices.pop_back();
+                indexCount-=3;
+
+                updateIndexBuffer = true;
+            }
+        } else 
+        if (key == GLFW_KEY_UP){
+            if(action == GLFW_PRESS){
+                indices.push_back(3);
+                indices.push_back(1);
+                indices.push_back(7);
+                indexCount += 3;
+
+                updateIndexBuffer = true;
+            }
+            
+            if(action == GLFW_RELEASE){
+                indices.pop_back();
+                indices.pop_back();
+                indices.pop_back();
+                indexCount-=3;
 
                 updateIndexBuffer = true;
             }
@@ -187,13 +238,12 @@ private:
     }
 
     void setupData(){
-
-        maxVertexCount = 6;
-        maxIndexCount = 12;
+        maxVertexCount = 8;
+        maxIndexCount = 20;
 
         indexCount = 6;
 
-        vertices.resize(6);
+        vertices.resize(8);
         indices.resize(6);
 
         float h = 1.0 * std::sqrt(3)/2.f;
@@ -205,38 +255,24 @@ private:
         vertices[3].position = {-0.5,0.5,0.0};
         vertices[4].position = {-extended,0.0,0.0};
         vertices[5].position = {extended,0.0,0.0};
-        vertices[0].color = {1,0,1,1};
+        vertices[6].position = {0.0,-extended,0.0};
+        vertices[7].position = {0.0,extended,0.0};
+
+        vertices[0].color = {1,0,0,1};
         vertices[1].color = {1,0,1,1};
-        vertices[2].color = {1,0,1,1};
+        vertices[2].color = {1,0,0,1};
         vertices[3].color = {1,0,1,1};
         vertices[4].color = {0,1,0,1};
         vertices[5].color = {1,0,0,1};
+        vertices[6].color = {1,1,1,1};
+        vertices[7].color = {0,0,0,1};
         
-        /*
-        vertices[0].uv_x = 1;
-        vertices[1].uv_x = 1;
-        vertices[2].uv_x = 1;
-        vertices[3].uv_x = 1;
-        vertices[4].uv_x = 1;
-        */
-
         indices[0] = 0;
         indices[1] = 1;
         indices[2] = 2;
-
         indices[3] = 2;
         indices[4] = 1;
         indices[5] = 3;
-
-        /*
-        indices[6] = 2;
-        indices[7] = 3;
-        indices[8] = 4;
-
-        indices[9] = 0;
-        indices[10] = 5;
-        indices[11] = 1;
-        */
     }
 
     float getTimeDelta() {
