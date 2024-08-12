@@ -1,7 +1,7 @@
 #include "types.h"
 
 #include "renderer.h"
-#include "external_test.h"
+#include "physics_sim.h"
 
 int main(){
     Renderer app;
