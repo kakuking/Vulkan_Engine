@@ -75,6 +75,7 @@ target_link_libraries(imgui PUBLIC ${Vulkan_LIBRARIES} glfw)
 target_include_directories(vma INTERFACE third-party/vma)
 target_link_libraries(VulkanEngine glfw fmt glm vk-bootstrap vma imgui)
 
+#[===[
 # Include stb_image
 target_include_directories(VulkanEngine PRIVATE third-party/stb)
 
@@ -83,6 +84,7 @@ target_include_directories(VulkanEngine PRIVATE third-party/fastgltf/include)
 
 # If fastgltf has its own CMakeLists, add the subdirectory
 add_subdirectory(third-party/fastgltf)
+]===]
 
 # Link other necessary libraries
 if (WIN32)

@@ -545,7 +545,7 @@ private:
         ImGui::End();
 
         static int prevUseOrtho = _useOrtho;
-        static glm::vec3 prevEye{0.f, 0.f, 2.f}, prevCenter{0.f, 0.f, 0.f}, prevUp{0.f, 1.f, 0.f};
+        static glm::vec3 prevEye = initialEye, prevCenter = initialCenter, prevUp = initialUp;
         static float prevFOV = _fov;
 
         if(ImGui::Begin("Camera Setting")) {
@@ -1048,7 +1048,7 @@ private:
     }
 
     void setupViewAndProjMatrices(){
-        setViewMatrix(glm::vec3(0.0f, 0.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        setViewMatrix(initialEye, initialCenter, initialUp);
         setProjMatrix();
     }
 

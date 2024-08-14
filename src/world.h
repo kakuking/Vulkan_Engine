@@ -6,6 +6,12 @@
 struct Particle {
     glm::vec3 center;
     float radius;
+    float mass;
+    glm::vec3 velocity;
+
+    glm::vec3 accumulatedForce;
+    glm::vec3 accumulatedAcceleration;
+
     std::vector<glm::vec3> vertices;
     std::vector<uint32_t> indices;
 
@@ -20,18 +26,36 @@ struct Particle {
     virtual void createVertices(){};
     virtual void updateLevel(int newLevel){};
 
-    virtual void translate(glm::vec3 t) {
+    void translate(glm::vec3 t) {
         center += t;
         for(auto& vert: vertices){
             vert += t;
         }
     }
+
+    void addForce(glm::vec3 force){
+        accumulatedForce += force;
+        accumulatedAcceleration += force/mass;
+    }
+
+    void resetForce(){
+        accumulatedForce = {};
+        accumulatedAcceleration = {};
+    }
 };
 
 struct Circle: public Particle {
-    Circle(glm::vec3 newCenter, float newRadius){
+    Circle(glm::vec3 newCenter, float newRadius, float newMass){
         center = newCenter;
         radius = newRadius;
+        mass = newMass;
+    }
+
+    Circle(glm::vec3 newCenter, float newRadius, float newMass, int newLevel){
+        center = newCenter;
+        radius = newRadius;
+        mass = newMass;
+        level = newLevel;
     }
 
     void createVertices(){
@@ -40,13 +64,14 @@ struct Circle: public Particle {
         float prevAngle = 0.0f;
         float curAngle = 0.0f;
 
+        int centerIndex = vertices.size();
         vertices.push_back(center); // center is 0th
         for (size_t i = 0; i < level + 2; i++)
         {   
             curAngle = angle * (i + 1.f);
 
-            glm::vec3 first = glm::vec3(glm::cos(curAngle), glm::sin(curAngle), 0.f);
-            glm::vec3 third = glm::vec3(glm::cos(prevAngle), glm::sin(prevAngle), 0.f);
+            glm::vec3 first = radius * glm::vec3(glm::cos(curAngle), glm::sin(curAngle), 0.f);
+            glm::vec3 third = radius * glm::vec3(glm::cos(prevAngle), glm::sin(prevAngle), 0.f);
 
             prevAngle = curAngle;
 
@@ -54,7 +79,7 @@ struct Circle: public Particle {
             vertices.push_back(third + center);
 
             indices.push_back(vertices.size() - 2);
-            indices.push_back(0);
+            indices.push_back(centerIndex);
             indices.push_back(vertices.size() - 1);
         }
     }
@@ -68,8 +93,19 @@ class World{
 
     int level = 1;    
 
+
 public:
+    float G = 6.67e-4; // 10^7 times stronger than actually
+
     std::vector<Vertex> getVertices(){
+        int currentOffset = 0;
+        for (auto& p: particles){   
+            for(size_t j = 0; j < p.vertices.size(); j++)
+                vertices[currentOffset + j].position = p.vertices[j];
+            
+            currentOffset += p.vertices.size();
+        }
+        
         return vertices;
     }
 
@@ -85,16 +121,15 @@ public:
         level = newLevel;
     }
 
-    void addCircle(glm::vec3 center, float radius, glm::vec4 color){
-        addCircle(center, radius, color, level);
+    void addCircle(glm::vec3 center, float radius, float mass, glm::vec4 color){
+        addCircle(center, radius, mass, color, level);
     }
 
-    void addCircle(glm::vec3 center, float radius, glm::vec4 color, int level){
-        Circle circle(center, radius);
-
-        circle.level = level;
-
+    void addCircle(glm::vec3 center, float radius, float mass, glm::vec4 color, int level){
+        Circle circle(center, radius, mass, level);
         circle.createVertices();
+
+        int currentOffset = vertices.size();
 
         for(auto& vertex: circle.vertices){
             Vertex v;
@@ -104,8 +139,6 @@ public:
             vertices.push_back(v);
         }
 
-        int currentOffset = indices.size();
-
         for (auto& index: circle.indices)
         {
             indices.push_back(index + currentOffset);
@@ -114,10 +147,42 @@ public:
         particles.push_back(circle);
     }
 
-    void update(float timeDelta){
+    void update(float deltaTime){
         if(particles.size() < 2)
             return;
 
-        
+        for(auto& particle: particles){
+            updatePosition(particle, deltaTime);
+            particle.resetForce();
+        }
+
+        accumulateForces();
+    }
+
+private:
+    void accumulateForces(){
+        for (size_t i = 0; i < particles.size(); i++)
+        {
+            for (size_t j = i+1; j < particles.size(); j++)
+            {
+                glm::vec3 direction = particles[i].center - particles[j].center;    // Towards ith particle
+                float distance = glm::length(direction);
+
+                float magnitude = G * particles[i].mass * particles[j].mass / (distance * distance);
+
+                particles[i].addForce(magnitude*-direction);
+                particles[j].addForce(magnitude*direction);
+            }
+        }
+    }
+
+    void updatePosition(Particle& particle, float deltaTime) {
+        glm::vec3 displacement = particle.velocity * deltaTime;
+        glm::vec3 at = deltaTime * particle.accumulatedAcceleration;
+        displacement += (float)0.5 * deltaTime * at;
+
+        particle.translate(displacement);
+
+        particle.velocity += at;
     }
 };

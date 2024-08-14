@@ -33,6 +33,8 @@
 
 uint32_t WIDTH = 800, HEIGHT = 600;
 
+glm::vec3 initialEye{0.f, 0.f, 10.f}, initialCenter{0.f, 0.f, 0.f}, initialUp{0.f, 1.f, 0.f};
+
 const bool USE_VALIDATION_LAYERS = true;
 
 const uint32_t FRAME_OVERLAP = 2;

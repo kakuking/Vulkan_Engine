@@ -30,9 +30,7 @@ public:
 
     void imguiInterface(){
         if(ImGui::Begin("External Mesh Test")){
-            ImGui::SliderFloat("Rotation Speed", &rotationSpeed, -20.f, 20.f);
-
-            ImGui::SliderFloat3("Axis of Rotation", (float*)& axisOfRotation, -20.f, 20.f);
+            ImGui::SliderFloat("Gravity", &world.G, -1.f, 1.f);
         }
         ImGui::End();
     }
@@ -167,19 +165,11 @@ private:
         });
     }
 
-    float rotationSpeed = 0.1f;
-    float rotAngle = 0.f;
-    glm::vec3 axisOfRotation = glm::vec3(0.0f, 0.0f, 1.0f);
-
     std::chrono::time_point<std::chrono::high_resolution_clock> prevTime = std::chrono::high_resolution_clock::now();
 
     void updateUniformBuffer() {
-        // float timeDelta = getTimeDelta();
-        // rotAngle += timeDelta * rotationSpeed;
-
         RectangleUniform* data = (RectangleUniform*)uniformBuffer.allocation->GetMappedData();
         *data = {
-            // glm::rotate(glm::mat4(1.0f), rotAngle, axisOfRotation)
             glm::mat4(1.0f)
         };
     }
@@ -247,8 +237,11 @@ private:
         maxVertexCount = 100;
         maxIndexCount = 1000;
 
-        world.setLevel(1);
-        world.addCircle(glm::vec3(0.0, 0.0, 0.0), 0.2f, glm::vec4(0.5, 0.5, 0.0, 1.0),  8);
+        world.setLevel(5);
+
+        // Center, radius, mass, color
+        world.addCircle(glm::vec3(-1.0, -1.0, 0.0), 0.2f, 1.f, glm::vec4(0.0, 1.0, 0.0, 1.0));
+        world.addCircle(glm::vec3(1.0, 1.0, 0.0), 0.282f, 2.f, glm::vec4(1.0, 0.0, 0.0, 1.0));
 
         vertices = world.getVertices();
         indices = world.getIndices();
